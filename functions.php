@@ -1,0 +1,423 @@
+<?php
+/**
+ * Just Spectacular Theme functions.
+ */
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+define( 'JST_VERSION', '1.2.1' );
+
+/**
+ * Theme setup.
+ */
+function jst_setup() {
+	add_theme_support( 'title-tag' );
+	add_theme_support( 'post-thumbnails' );
+	add_theme_support( 'html5', array( 'search-form', 'comment-form', 'comment-list', 'gallery', 'caption' ) );
+	add_theme_support( 'automatic-feed-links' );
+	add_theme_support( 'editor-styles' );
+	add_editor_style( 'editor-style.css' );
+
+	register_nav_menus(
+		array(
+			'primary' => __( 'Primary Menu', 'just-spectacular-theme' ),
+		)
+	);
+}
+add_action( 'after_setup_theme', 'jst_setup' );
+
+/**
+ * Enqueue styles.
+ */
+function jst_scripts() {
+	if ( is_singular() && get_post_meta( get_the_ID(), '_jst_disable_theme_style', true ) ) {
+		return;
+	}
+	wp_enqueue_style( 'jst-style', get_stylesheet_uri(), array(), JST_VERSION );
+}
+add_action( 'wp_enqueue_scripts', 'jst_scripts' );
+
+/**
+ * Admin-only JS: quick-paste <style>/<script> buttons and a fix that
+ * stops Ctrl/Cmd+Z inside meta box / theme options text fields from
+ * triggering the block editor's global undo instead of the field's
+ * own native undo stack.
+ */
+function jst_admin_scripts( $hook ) {
+	if ( ! in_array( $hook, array( 'post.php', 'post-new.php', 'appearance_page_jst-theme-options' ), true ) ) {
+		return;
+	}
+	wp_enqueue_script( 'jst-admin', get_template_directory_uri() . '/js/admin.js', array(), JST_VERSION, true );
+}
+add_action( 'admin_enqueue_scripts', 'jst_admin_scripts' );
+
+/**
+ * Default nav menu fallback.
+ *
+ * Renders the registered "primary" menu location (Appearance > Menus).
+ * Until a menu is assigned there, falls back to a list of current pages.
+ * Only shown when the Theme Options "Navigation" box is empty, so a
+ * custom pasted nav always takes priority.
+ */
+function jst_default_nav_fallback() {
+	if ( get_option( 'jst_navigation', '' ) ) {
+		return;
+	}
+
+	wp_nav_menu(
+		array(
+			'theme_location' => 'primary',
+			'container'      => 'nav',
+			'container_class' => 'jst-default-nav',
+			'menu_class'     => 'jst-default-nav__list',
+			'fallback_cb'    => 'jst_default_nav_pages_fallback',
+		)
+	);
+}
+
+/**
+ * Fallback used by wp_nav_menu() when no menu is assigned to the
+ * "primary" location yet — lists current pages.
+ */
+function jst_default_nav_pages_fallback() {
+	echo '<nav class="jst-default-nav"><ul class="jst-default-nav__list">';
+	wp_list_pages(
+		array(
+			'title_li' => '',
+		)
+	);
+	echo '</ul></nav>';
+}
+
+/**
+ * ------------------------------------------------------------------
+ * Theme Options page (Appearance -> Theme Options)
+ * ------------------------------------------------------------------
+ */
+
+function jst_register_theme_options_page() {
+	add_theme_page(
+		__( 'Theme Options', 'just-spectacular-theme' ),
+		__( 'Theme Options', 'just-spectacular-theme' ),
+		'manage_options',
+		'jst-theme-options',
+		'jst_render_theme_options_page'
+	);
+}
+add_action( 'admin_menu', 'jst_register_theme_options_page' );
+
+function jst_theme_options_fields() {
+	return array(
+		'jst_header_scripts' => __( 'Header Scripts', 'just-spectacular-theme' ),
+		'jst_navigation'     => __( 'Navigation', 'just-spectacular-theme' ),
+		'jst_footer'         => __( 'Footer', 'just-spectacular-theme' ),
+	);
+}
+
+function jst_render_theme_options_page() {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		return;
+	}
+
+	if ( isset( $_POST['jst_theme_options_nonce'] ) && wp_verify_nonce( wp_unslash( $_POST['jst_theme_options_nonce'] ), 'jst_save_theme_options' ) ) {
+		foreach ( array_keys( jst_theme_options_fields() ) as $field ) {
+			if ( isset( $_POST[ $field ] ) ) {
+				// Admin-only trust context: raw HTML/script paste, intentionally not sanitized.
+				update_option( $field, wp_unslash( $_POST[ $field ] ) );
+			} else {
+				update_option( $field, '' );
+			}
+		}
+		update_option( 'jst_disable_tailwind_prose', isset( $_POST['jst_disable_tailwind_prose'] ) ? '1' : '' );
+		echo '<div class="updated"><p>' . esc_html__( 'Theme options saved.', 'just-spectacular-theme' ) . '</p></div>';
+	}
+
+	$fields           = jst_theme_options_fields();
+	$disable_prose    = get_option( 'jst_disable_tailwind_prose', '' );
+	?>
+	<div class="wrap">
+		<h1><?php esc_html_e( 'Theme Options', 'just-spectacular-theme' ); ?></h1>
+		<form method="post" action="">
+			<?php wp_nonce_field( 'jst_save_theme_options', 'jst_theme_options_nonce' ); ?>
+			<?php foreach ( $fields as $field_id => $field_label ) : ?>
+				<h2><?php echo esc_html( $field_label ); ?></h2>
+				<p>
+					<button type="button" class="button jst-quick-tag-btn" data-target="<?php echo esc_attr( $field_id ); ?>" data-tag="style"><?php esc_html_e( 'Insert <style>', 'just-spectacular-theme' ); ?></button>
+					<button type="button" class="button jst-quick-tag-btn" data-target="<?php echo esc_attr( $field_id ); ?>" data-tag="script"><?php esc_html_e( 'Insert <script>', 'just-spectacular-theme' ); ?></button>
+				</p>
+				<p>
+					<textarea id="<?php echo esc_attr( $field_id ); ?>" name="<?php echo esc_attr( $field_id ); ?>" rows="14" class="jst-metabox-field" style="width:100%;font-family:monospace;"><?php echo get_option( $field_id, '' ); // phpcs:ignore -- intentionally unescaped raw HTML/script storage. ?></textarea>
+				</p>
+			<?php endforeach; ?>
+
+			<h2><?php esc_html_e( 'Content Styling', 'just-spectacular-theme' ); ?></h2>
+			<p>
+				<label>
+					<input type="checkbox" name="jst_disable_tailwind_prose" value="1" <?php checked( $disable_prose, '1' ); ?> />
+					<?php esc_html_e( 'Disable Tailwind "prose" class on post/page content', 'just-spectacular-theme' ); ?>
+				</label>
+				<br>
+				<span class="description">
+					<?php esc_html_e( 'The "prose" class is added to post/page content by default (requires the Tailwind Typography plugin loaded via Header Scripts). Check this box to remove it sitewide.', 'just-spectacular-theme' ); ?>
+				</span>
+			</p>
+
+			<?php submit_button( __( 'Save Options', 'just-spectacular-theme' ) ); ?>
+		</form>
+	</div>
+	<?php
+}
+
+/**
+ * Returns the content wrapper class, including "prose" unless disabled
+ * via Theme Options.
+ */
+function jst_content_class( $extra = '' ) {
+	$classes = array();
+
+	if ( $extra ) {
+		$classes[] = $extra;
+	}
+
+	if ( ! get_option( 'jst_disable_tailwind_prose', '' ) ) {
+		// max-w-none strips Tailwind Typography's own width cap so the
+		// per-page Width setting on the outer container is what governs
+		// content width, not the "prose" class.
+		$classes[] = 'prose max-w-none';
+	}
+
+	return esc_attr( implode( ' ', $classes ) );
+}
+
+/**
+ * Output Header Scripts in wp_head.
+ */
+function jst_output_header_scripts() {
+	echo get_option( 'jst_header_scripts', '' ); // phpcs:ignore -- intentional raw output, admin-trusted.
+}
+add_action( 'wp_head', 'jst_output_header_scripts' );
+
+/**
+ * Output Navigation markup at wp_body_open.
+ */
+function jst_output_navigation() {
+	echo get_option( 'jst_navigation', '' ); // phpcs:ignore -- intentional raw output, admin-trusted.
+}
+add_action( 'wp_body_open', 'jst_output_navigation' );
+
+/**
+ * Output Footer markup/scripts right before </body>.
+ */
+function jst_output_footer() {
+	echo get_option( 'jst_footer', '' ); // phpcs:ignore -- intentional raw output, admin-trusted.
+}
+add_action( 'jst_before_closing_body', 'jst_output_footer' );
+
+/**
+ * ------------------------------------------------------------------
+ * Per-page meta box: "Page Settings"
+ * ------------------------------------------------------------------
+ */
+
+function jst_add_page_settings_meta_box() {
+	$post_types = get_post_types( array( 'public' => true ) );
+
+	foreach ( $post_types as $post_type ) {
+		if ( 'attachment' === $post_type ) {
+			continue;
+		}
+
+		add_meta_box(
+			'jst_page_settings',
+			__( 'Page Settings', 'just-spectacular-theme' ),
+			'jst_render_page_settings_meta_box',
+			$post_type,
+			'normal',
+			'default'
+		);
+	}
+}
+add_action( 'add_meta_boxes', 'jst_add_page_settings_meta_box' );
+
+function jst_render_page_settings_meta_box( $post ) {
+	wp_nonce_field( 'jst_save_page_settings', 'jst_page_settings_nonce' );
+
+	$width           = get_post_meta( $post->ID, '_jst_page_width', true );
+	$header_code     = get_post_meta( $post->ID, '_jst_page_header_code', true );
+	$footer_code     = get_post_meta( $post->ID, '_jst_page_footer_code', true );
+	$disable_style   = get_post_meta( $post->ID, '_jst_disable_theme_style', true );
+	?>
+	<p>
+		<label for="jst_page_width"><strong><?php esc_html_e( 'Width', 'just-spectacular-theme' ); ?></strong></label><br>
+		<input type="text" id="jst_page_width" name="jst_page_width" value="<?php echo esc_attr( $width ); ?>" placeholder="80rem" style="width:100%;max-width:300px;" />
+		<br>
+		<span class="description">
+			<?php esc_html_e( 'Max content width, used by the Default, Plain, and Full Width templates. Accepts any valid CSS value (e.g. 80rem, 1200px, 100%, none). Defaults to 80rem (100% on Full Width) if left blank.', 'just-spectacular-theme' ); ?>
+		</span>
+	</p>
+	<p>
+		<label for="jst_page_header_code"><strong><?php esc_html_e( 'Page Header Code', 'just-spectacular-theme' ); ?></strong></label><br>
+		<button type="button" class="button jst-quick-tag-btn" data-target="jst_page_header_code" data-tag="style"><?php esc_html_e( 'Insert <style>', 'just-spectacular-theme' ); ?></button>
+		<button type="button" class="button jst-quick-tag-btn" data-target="jst_page_header_code" data-tag="script"><?php esc_html_e( 'Insert <script>', 'just-spectacular-theme' ); ?></button>
+		<br>
+		<textarea id="jst_page_header_code" name="jst_page_header_code" rows="8" class="jst-metabox-field" style="width:100%;font-family:monospace;"><?php echo esc_textarea( $header_code ); ?></textarea>
+		<br>
+		<span class="description">
+			<?php esc_html_e( 'Runs in addition to the global Header Scripts (Appearance > Theme Options), not instead of.', 'just-spectacular-theme' ); ?>
+		</span>
+	</p>
+	<p>
+		<label for="jst_page_footer_code"><strong><?php esc_html_e( 'Page Footer Code', 'just-spectacular-theme' ); ?></strong></label><br>
+		<button type="button" class="button jst-quick-tag-btn" data-target="jst_page_footer_code" data-tag="style"><?php esc_html_e( 'Insert <style>', 'just-spectacular-theme' ); ?></button>
+		<button type="button" class="button jst-quick-tag-btn" data-target="jst_page_footer_code" data-tag="script"><?php esc_html_e( 'Insert <script>', 'just-spectacular-theme' ); ?></button>
+		<br>
+		<textarea id="jst_page_footer_code" name="jst_page_footer_code" rows="8" class="jst-metabox-field" style="width:100%;font-family:monospace;"><?php echo esc_textarea( $footer_code ); ?></textarea>
+		<br>
+		<span class="description">
+			<?php esc_html_e( 'Runs in addition to the global Footer box (Appearance > Theme Options), not instead of.', 'just-spectacular-theme' ); ?>
+		</span>
+	</p>
+	<p>
+		<label>
+			<input type="checkbox" name="jst_disable_theme_style" value="1" <?php checked( $disable_style, '1' ); ?> />
+			<?php esc_html_e( 'Disable theme style.css on this page', 'just-spectacular-theme' ); ?>
+		</label>
+		<br>
+		<span class="description">
+			<?php esc_html_e( 'When checked, the theme\'s style.css (nav fallback, headings, cards, etc.) is not loaded on this page/post — useful for fully custom-built pages.', 'just-spectacular-theme' ); ?>
+		</span>
+	</p>
+	<?php
+}
+
+function jst_save_page_settings_meta_box( $post_id ) {
+	if ( ! isset( $_POST['jst_page_settings_nonce'] ) || ! wp_verify_nonce( wp_unslash( $_POST['jst_page_settings_nonce'] ), 'jst_save_page_settings' ) ) {
+		return;
+	}
+
+	if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) {
+		return;
+	}
+
+	if ( ! current_user_can( 'edit_post', $post_id ) ) {
+		return;
+	}
+
+	if ( isset( $_POST['jst_page_width'] ) ) {
+		update_post_meta( $post_id, '_jst_page_width', sanitize_text_field( wp_unslash( $_POST['jst_page_width'] ) ) );
+	}
+
+	if ( isset( $_POST['jst_page_header_code'] ) ) {
+		// Admin-only trust context: raw HTML/script paste, intentionally not sanitized.
+		update_post_meta( $post_id, '_jst_page_header_code', wp_unslash( $_POST['jst_page_header_code'] ) );
+	}
+
+	if ( isset( $_POST['jst_page_footer_code'] ) ) {
+		// Admin-only trust context: raw HTML/script paste, intentionally not sanitized.
+		update_post_meta( $post_id, '_jst_page_footer_code', wp_unslash( $_POST['jst_page_footer_code'] ) );
+	}
+
+	update_post_meta( $post_id, '_jst_disable_theme_style', isset( $_POST['jst_disable_theme_style'] ) ? '1' : '' );
+}
+add_action( 'save_post', 'jst_save_page_settings_meta_box' );
+
+/**
+ * Output per-page additive header/footer code.
+ */
+function jst_output_page_header_code() {
+	if ( is_singular() ) {
+		echo get_post_meta( get_the_ID(), '_jst_page_header_code', true ); // phpcs:ignore -- intentional raw output, admin-trusted.
+	}
+}
+add_action( 'wp_head', 'jst_output_page_header_code' );
+
+function jst_output_page_footer_code() {
+	if ( is_singular() ) {
+		echo get_post_meta( get_the_ID(), '_jst_page_footer_code', true ); // phpcs:ignore -- intentional raw output, admin-trusted.
+	}
+}
+add_action( 'jst_before_closing_body', 'jst_output_page_footer_code' );
+
+/**
+ * Simple breadcrumb trail: Home > Current.
+ */
+function jst_breadcrumbs() {
+	echo '<nav class="jst-breadcrumbs" aria-label="' . esc_attr__( 'Breadcrumb', 'just-spectacular-theme' ) . '">';
+	echo '<a href="' . esc_url( home_url( '/' ) ) . '">' . esc_html__( 'Home', 'just-spectacular-theme' ) . '</a>';
+
+	if ( is_home() ) {
+		echo ' <span class="jst-breadcrumbs__sep">/</span> ' . esc_html( get_the_title( get_option( 'page_for_posts' ) ) );
+	} elseif ( is_category() || is_tag() || is_tax() || is_archive() ) {
+		echo ' <span class="jst-breadcrumbs__sep">/</span> ' . wp_strip_all_tags( get_the_archive_title() );
+	} elseif ( is_singular() ) {
+		echo ' <span class="jst-breadcrumbs__sep">/</span> ' . esc_html( get_the_title() );
+	} elseif ( is_search() ) {
+		echo ' <span class="jst-breadcrumbs__sep">/</span> ' . esc_html__( 'Search Results', 'just-spectacular-theme' );
+	}
+
+	echo '</nav>';
+}
+
+/**
+ * Hero band used on the index template: "Welcome to [Site Name]" on the
+ * front page, breadcrumbs + contextual title everywhere else index.php
+ * is used (blog posts page, category/tag/archive fallback).
+ */
+function jst_index_hero() {
+	?>
+	<div class="jst-hero">
+		<div class="jst-container">
+			<?php if ( is_front_page() ) : ?>
+				<h1 class="jst-hero__title">
+					<?php
+					printf(
+						/* translators: %s: site name */
+						esc_html__( 'Welcome to %s', 'just-spectacular-theme' ),
+						esc_html( get_bloginfo( 'name' ) )
+					);
+					?>
+				</h1>
+			<?php else : ?>
+				<?php jst_breadcrumbs(); ?>
+				<h1 class="jst-hero__title">
+					<?php
+					if ( is_home() ) {
+						echo esc_html( get_the_title( get_option( 'page_for_posts' ) ) );
+					} elseif ( is_category() || is_tag() || is_tax() || is_archive() ) {
+						the_archive_title( '', '' );
+					}
+					?>
+				</h1>
+			<?php endif; ?>
+		</div>
+	</div>
+	<?php
+}
+
+/**
+ * Hero-style title band for the default page template: breadcrumbs +
+ * page title, same visual treatment as the index hero.
+ */
+function jst_page_hero() {
+	?>
+	<div class="jst-hero">
+		<div class="jst-container">
+			<?php jst_breadcrumbs(); ?>
+			<h1 class="jst-hero__title"><?php the_title(); ?></h1>
+		</div>
+	</div>
+	<?php
+}
+
+/**
+ * Helper: get the configured page width with fallback default.
+ */
+function jst_get_page_width( $post_id = null, $default = '80rem' ) {
+	if ( null === $post_id ) {
+		$post_id = get_the_ID();
+	}
+	$width = get_post_meta( $post_id, '_jst_page_width', true );
+	return $width ? $width : $default;
+}
