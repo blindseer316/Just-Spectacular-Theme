@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.2.1' );
+define( 'JST_VERSION', '1.3.0' );
 
 /**
  * Theme setup.
