@@ -1,0 +1,23 @@
+/**
+ * Just Spectacular Theme — admin-only styling.
+ * Subtle, smaller quick-paste buttons for meta box / theme options fields.
+ */
+.jst-quick-tag-btn {
+	font-size: 11px !important;
+	line-height: 1.6 !important;
+	min-height: 24px !important;
+	padding: 0 8px !important;
+	margin-right: 4px;
+	background: #f6f7f7 !important;
+	border-color: #dcdcde !important;
+	color: #50575e !important;
+	box-shadow: none !important;
+	text-shadow: none !important;
+}
+
+.jst-quick-tag-btn:hover,
+.jst-quick-tag-btn:focus {
+	background: #f0f0f1 !important;
+	border-color: #c3c4c7 !important;
+	color: #1d2327 !important;
+}

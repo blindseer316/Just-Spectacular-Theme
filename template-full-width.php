@@ -16,11 +16,7 @@ $jst_width = jst_get_page_width( null, '100%' );
 	<?php
 	while ( have_posts() ) :
 		the_post();
-		?>
-		<div class="<?php echo jst_content_class(); ?>">
-			<?php the_content(); ?>
-		</div>
-		<?php
+		the_content();
 	endwhile;
 	?>
 </main>

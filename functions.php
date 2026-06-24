@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.3.0' );
+define( 'JST_VERSION', '1.3.1' );
 
 /**
  * Theme setup.
@@ -40,16 +40,17 @@ function jst_scripts() {
 add_action( 'wp_enqueue_scripts', 'jst_scripts' );
 
 /**
- * Admin-only JS: quick-paste <style>/<script> buttons and a fix that
- * stops Ctrl/Cmd+Z inside meta box / theme options text fields from
- * triggering the block editor's global undo instead of the field's
- * own native undo stack.
+ * Admin-only JS/CSS: quick-paste <style>/<script> buttons and a fix
+ * that stops Ctrl/Cmd+Z inside meta box / theme options text fields
+ * from triggering the block editor's global undo instead of the
+ * field's own native undo stack.
  */
 function jst_admin_scripts( $hook ) {
 	if ( ! in_array( $hook, array( 'post.php', 'post-new.php', 'appearance_page_jst-theme-options' ), true ) ) {
 		return;
 	}
 	wp_enqueue_script( 'jst-admin', get_template_directory_uri() . '/js/admin.js', array(), JST_VERSION, true );
+	wp_enqueue_style( 'jst-admin', get_template_directory_uri() . '/css/admin.css', array(), JST_VERSION );
 }
 add_action( 'admin_enqueue_scripts', 'jst_admin_scripts' );
 
