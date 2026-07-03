@@ -21,3 +21,29 @@
 	border-color: #c3c4c7 !important;
 	color: #1d2327 !important;
 }
+
+/* Copy button in list table shortcode column */
+.jst-copy-btn {
+	font-size: 11px !important;
+	line-height: 1.4 !important;
+	min-height: 20px !important;
+	height: 20px !important;
+	padding: 0 6px !important;
+	margin-left: 4px !important;
+	vertical-align: middle !important;
+	background: transparent !important;
+	border: 1px solid #c3c4c7 !important;
+	border-radius: 3px !important;
+	color: #787c82 !important;
+	box-shadow: none !important;
+	text-shadow: none !important;
+	cursor: pointer;
+}
+
+.jst-copy-btn:hover,
+.jst-copy-btn:focus {
+	background: #f0f0f1 !important;
+	border-color: #8c8f94 !important;
+	color: #1d2327 !important;
+	box-shadow: none !important;
+}
