@@ -50,6 +50,8 @@
 			insertAtCursor( textarea, '<style>\n', '\n</style>' );
 		} else if ( 'script' === tag ) {
 			insertAtCursor( textarea, '<script>\n', '\n</script>' );
+		} else if ( 'comment' === tag ) {
+			insertAtCursor( textarea, '<!-- ', ' -->' );
 		}
 	} );
 

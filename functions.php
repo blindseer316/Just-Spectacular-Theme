@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.3.1' );
+define( 'JST_VERSION', '1.4.0' );
 
 /**
  * Theme setup.
@@ -46,7 +46,7 @@ add_action( 'wp_enqueue_scripts', 'jst_scripts' );
  * field's own native undo stack.
  */
 function jst_admin_scripts( $hook ) {
-	if ( ! in_array( $hook, array( 'post.php', 'post-new.php', 'appearance_page_jst-theme-options' ), true ) ) {
+	if ( ! in_array( $hook, array( 'post.php', 'post-new.php', 'appearance_page_jst-theme-options', 'jst_part_page_jst-template-parts' ), true ) ) {
 		return;
 	}
 	wp_enqueue_script( 'jst-admin', get_template_directory_uri() . '/js/admin.js', array(), JST_VERSION, true );
@@ -147,6 +147,7 @@ function jst_render_theme_options_page() {
 				<p>
 					<button type="button" class="button jst-quick-tag-btn" data-target="<?php echo esc_attr( $field_id ); ?>" data-tag="style"><?php esc_html_e( 'Insert <style>', 'just-spectacular-theme' ); ?></button>
 					<button type="button" class="button jst-quick-tag-btn" data-target="<?php echo esc_attr( $field_id ); ?>" data-tag="script"><?php esc_html_e( 'Insert <script>', 'just-spectacular-theme' ); ?></button>
+					<button type="button" class="button jst-quick-tag-btn" data-target="<?php echo esc_attr( $field_id ); ?>" data-tag="comment"><?php esc_html_e( 'Insert <!-- -->', 'just-spectacular-theme' ); ?></button>
 				</p>
 				<p>
 					<textarea id="<?php echo esc_attr( $field_id ); ?>" name="<?php echo esc_attr( $field_id ); ?>" rows="14" class="jst-metabox-field" style="width:100%;font-family:monospace;"><?php echo get_option( $field_id, '' ); // phpcs:ignore -- intentionally unescaped raw HTML/script storage. ?></textarea>
@@ -262,6 +263,7 @@ function jst_render_page_settings_meta_box( $post ) {
 		<label for="jst_page_header_code"><strong><?php esc_html_e( 'Page Header Code', 'just-spectacular-theme' ); ?></strong></label><br>
 		<button type="button" class="button jst-quick-tag-btn" data-target="jst_page_header_code" data-tag="style"><?php esc_html_e( 'Insert <style>', 'just-spectacular-theme' ); ?></button>
 		<button type="button" class="button jst-quick-tag-btn" data-target="jst_page_header_code" data-tag="script"><?php esc_html_e( 'Insert <script>', 'just-spectacular-theme' ); ?></button>
+		<button type="button" class="button jst-quick-tag-btn" data-target="jst_page_header_code" data-tag="comment"><?php esc_html_e( 'Insert <!-- -->', 'just-spectacular-theme' ); ?></button>
 		<br>
 		<textarea id="jst_page_header_code" name="jst_page_header_code" rows="8" class="jst-metabox-field" style="width:100%;font-family:monospace;"><?php echo esc_textarea( $header_code ); ?></textarea>
 		<br>
@@ -273,6 +275,7 @@ function jst_render_page_settings_meta_box( $post ) {
 		<label for="jst_page_footer_code"><strong><?php esc_html_e( 'Page Footer Code', 'just-spectacular-theme' ); ?></strong></label><br>
 		<button type="button" class="button jst-quick-tag-btn" data-target="jst_page_footer_code" data-tag="style"><?php esc_html_e( 'Insert <style>', 'just-spectacular-theme' ); ?></button>
 		<button type="button" class="button jst-quick-tag-btn" data-target="jst_page_footer_code" data-tag="script"><?php esc_html_e( 'Insert <script>', 'just-spectacular-theme' ); ?></button>
+		<button type="button" class="button jst-quick-tag-btn" data-target="jst_page_footer_code" data-tag="comment"><?php esc_html_e( 'Insert <!-- -->', 'just-spectacular-theme' ); ?></button>
 		<br>
 		<textarea id="jst_page_footer_code" name="jst_page_footer_code" rows="8" class="jst-metabox-field" style="width:100%;font-family:monospace;"><?php echo esc_textarea( $footer_code ); ?></textarea>
 		<br>
@@ -422,3 +425,307 @@ function jst_get_page_width( $post_id = null, $default = '80rem' ) {
 	$width = get_post_meta( $post_id, '_jst_page_width', true );
 	return $width ? $width : $default;
 }
+
+/**
+ * ------------------------------------------------------------------
+ * Template Parts CPT  (jst_part)
+ * ------------------------------------------------------------------
+ *
+ * Admin-only library of reusable HTML snippets. Each part is inserted
+ * into a page's Custom HTML block via [jst_part name="slug-here"].
+ *
+ * REST is enabled so parts are readable/editable through MCP tools
+ * (Royal MCP / EasyMCP) the same way other CPTs are.
+ * ------------------------------------------------------------------
+ */
+
+function jst_register_part_cpt() {
+	register_post_type(
+		'jst_part',
+		array(
+			'labels'              => array(
+				'name'               => __( 'Template Parts', 'just-spectacular-theme' ),
+				'singular_name'      => __( 'Template Part', 'just-spectacular-theme' ),
+				'add_new'            => __( 'Add New Part', 'just-spectacular-theme' ),
+				'add_new_item'       => __( 'Add New Template Part', 'just-spectacular-theme' ),
+				'edit_item'          => __( 'Edit Template Part', 'just-spectacular-theme' ),
+				'all_items'          => __( 'All Template Parts', 'just-spectacular-theme' ),
+				'search_items'       => __( 'Search Template Parts', 'just-spectacular-theme' ),
+			),
+			'public'              => false,
+			'show_ui'             => true,
+			'show_in_menu'        => true,
+			'menu_position'       => 20,
+			'menu_icon'           => 'dashicons-layout',
+			'supports'            => array( 'title' ),
+			'show_in_rest'        => true,
+			'rest_base'           => 'jst-parts',
+			'capability_type'     => 'post',
+			'rewrite'             => false,
+			'query_var'           => false,
+			'publicly_queryable'  => false,
+			'exclude_from_search' => true,
+		)
+	);
+}
+add_action( 'init', 'jst_register_part_cpt' );
+
+/**
+ * Tag taxonomy for Template Parts (organizational only — optional on each part).
+ */
+function jst_register_part_taxonomy() {
+	register_taxonomy(
+		'jst_part_tag',
+		'jst_part',
+		array(
+			'labels'            => array(
+				'name'          => __( 'Part Tags', 'just-spectacular-theme' ),
+				'singular_name' => __( 'Part Tag', 'just-spectacular-theme' ),
+				'add_new_item'  => __( 'Add New Tag', 'just-spectacular-theme' ),
+				'new_item_name' => __( 'New Tag Name', 'just-spectacular-theme' ),
+			),
+			'hierarchical'      => false,
+			'show_ui'           => true,
+			'show_in_rest'      => true,
+			'rest_base'         => 'jst-part-tags',
+			'show_admin_column' => true,
+			'rewrite'           => false,
+			'query_var'         => false,
+		)
+	);
+}
+add_action( 'init', 'jst_register_part_taxonomy' );
+
+/**
+ * Register the _jst_part_name and _jst_part_html meta fields for REST
+ * so MCP tools can read and update them.
+ */
+function jst_register_part_meta() {
+	register_post_meta(
+		'jst_part',
+		'_jst_part_name',
+		array(
+			'type'         => 'string',
+			'single'       => true,
+			'show_in_rest' => true,
+			'default'      => '',
+		)
+	);
+
+	register_post_meta(
+		'jst_part',
+		'_jst_part_html',
+		array(
+			'type'         => 'string',
+			'single'       => true,
+			'show_in_rest' => true,
+			'default'      => '',
+		)
+	);
+}
+add_action( 'init', 'jst_register_part_meta' );
+
+/**
+ * Meta box: Part Name + HTML content + quick-paste buttons.
+ */
+function jst_add_part_meta_box() {
+	add_meta_box(
+		'jst_part_content',
+		__( 'Part Content', 'just-spectacular-theme' ),
+		'jst_render_part_meta_box',
+		'jst_part',
+		'normal',
+		'high'
+	);
+}
+add_action( 'add_meta_boxes_jst_part', 'jst_add_part_meta_box' );
+
+function jst_render_part_meta_box( $post ) {
+	wp_nonce_field( 'jst_save_part', 'jst_part_nonce' );
+
+	$part_name = get_post_meta( $post->ID, '_jst_part_name', true );
+	$part_html = get_post_meta( $post->ID, '_jst_part_html', true );
+
+	$shortcode_preview = $part_name
+		? '[jst_part name="' . esc_attr( $part_name ) . '"]'
+		: __( '(set a Part Name below to generate the shortcode)', 'just-spectacular-theme' );
+	?>
+	<p>
+		<label for="jst_part_name"><strong><?php esc_html_e( 'Part Name', 'just-spectacular-theme' ); ?></strong></label><br>
+		<input type="text" id="jst_part_name" name="jst_part_name" value="<?php echo esc_attr( $part_name ); ?>" placeholder="trust-strip" style="width:100%;max-width:400px;" />
+		<br>
+		<span class="description">
+			<?php esc_html_e( 'Lowercase, hyphens only. Used in the shortcode: [jst_part name="your-name-here"]. Must be unique across all Template Parts.', 'just-spectacular-theme' ); ?>
+		</span>
+	</p>
+	<?php if ( $part_name ) : ?>
+	<p>
+		<strong><?php esc_html_e( 'Shortcode', 'just-spectacular-theme' ); ?></strong><br>
+		<code id="jst_shortcode_preview" style="background:#f0f0f1;padding:4px 8px;border-radius:3px;"><?php echo esc_html( $shortcode_preview ); ?></code>
+		<button type="button" class="button jst-quick-tag-btn" id="jst_copy_shortcode" style="margin-left:6px;"><?php esc_html_e( 'Copy', 'just-spectacular-theme' ); ?></button>
+	</p>
+	<?php endif; ?>
+	<p>
+		<label for="jst_part_html"><strong><?php esc_html_e( 'HTML Content', 'just-spectacular-theme' ); ?></strong></label><br>
+		<button type="button" class="button jst-quick-tag-btn" data-target="jst_part_html" data-tag="style"><?php esc_html_e( 'Insert <style>', 'just-spectacular-theme' ); ?></button>
+		<button type="button" class="button jst-quick-tag-btn" data-target="jst_part_html" data-tag="script"><?php esc_html_e( 'Insert <script>', 'just-spectacular-theme' ); ?></button>
+		<button type="button" class="button jst-quick-tag-btn" data-target="jst_part_html" data-tag="comment"><?php esc_html_e( 'Insert <!-- -->', 'just-spectacular-theme' ); ?></button>
+		<br>
+		<textarea id="jst_part_html" name="jst_part_html" rows="20" class="jst-metabox-field" style="width:100%;font-family:monospace;margin-top:4px;"><?php echo $part_html; // phpcs:ignore -- intentionally unescaped raw HTML storage. ?></textarea>
+		<br>
+		<span class="description">
+			<?php esc_html_e( 'Paste the full HTML for this reusable section. Output raw on the front end — no sanitization. Admin-trusted.', 'just-spectacular-theme' ); ?>
+		</span>
+	</p>
+	<?php
+}
+
+function jst_save_part_meta_box( $post_id ) {
+	if ( ! isset( $_POST['jst_part_nonce'] ) || ! wp_verify_nonce( wp_unslash( $_POST['jst_part_nonce'] ), 'jst_save_part' ) ) {
+		return;
+	}
+
+	if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) {
+		return;
+	}
+
+	if ( ! current_user_can( 'edit_post', $post_id ) ) {
+		return;
+	}
+
+	if ( isset( $_POST['jst_part_name'] ) ) {
+		update_post_meta( $post_id, '_jst_part_name', sanitize_title( wp_unslash( $_POST['jst_part_name'] ) ) );
+	}
+
+	if ( isset( $_POST['jst_part_html'] ) ) {
+		// Admin-only trust context: raw HTML paste, intentionally not sanitized.
+		update_post_meta( $post_id, '_jst_part_html', wp_unslash( $_POST['jst_part_html'] ) );
+	}
+}
+add_action( 'save_post_jst_part', 'jst_save_part_meta_box' );
+
+/**
+ * Add "Shortcode" column to the jst_part list screen.
+ */
+function jst_part_list_columns( $columns ) {
+	$new = array();
+	foreach ( $columns as $key => $label ) {
+		$new[ $key ] = $label;
+		if ( 'title' === $key ) {
+			$new['jst_shortcode'] = __( 'Shortcode', 'just-spectacular-theme' );
+		}
+	}
+	return $new;
+}
+add_filter( 'manage_jst_part_posts_columns', 'jst_part_list_columns' );
+
+function jst_part_list_column_content( $column, $post_id ) {
+	if ( 'jst_shortcode' !== $column ) {
+		return;
+	}
+
+	$name = get_post_meta( $post_id, '_jst_part_name', true );
+	if ( ! $name ) {
+		echo '<em style="color:#999;">' . esc_html__( 'No name set', 'just-spectacular-theme' ) . '</em>';
+		return;
+	}
+
+	$shortcode = '[jst_part name="' . esc_attr( $name ) . '"]';
+	echo '<code style="background:#f0f0f1;padding:2px 6px;border-radius:3px;font-size:12px;">' . esc_html( $shortcode ) . '</code> ';
+	echo '<button type="button" class="button jst-quick-tag-btn jst-copy-btn" data-copy="' . esc_attr( $shortcode ) . '" style="margin-left:4px;">'
+		. esc_html__( 'Copy', 'just-spectacular-theme' )
+		. '</button>';
+}
+add_action( 'manage_jst_part_posts_custom_column', 'jst_part_list_column_content', 10, 2 );
+
+/**
+ * Shortcode: [jst_part name="part-name"]
+ * Looks up the jst_part post by _jst_part_name meta and outputs its HTML raw.
+ */
+function jst_part_shortcode( $atts ) {
+	$atts = shortcode_atts( array( 'name' => '' ), $atts, 'jst_part' );
+
+	if ( ! $atts['name'] ) {
+		return '';
+	}
+
+	$parts = get_posts(
+		array(
+			'post_type'      => 'jst_part',
+			'posts_per_page' => 1,
+			'post_status'    => 'publish',
+			'meta_query'     => array(
+				array(
+					'key'   => '_jst_part_name',
+					'value' => sanitize_title( $atts['name'] ),
+				),
+			),
+			'no_found_rows'  => true,
+		)
+	);
+
+	if ( empty( $parts ) ) {
+		return '';
+	}
+
+	$html = get_post_meta( $parts[0]->ID, '_jst_part_html', true );
+	return $html; // phpcs:ignore -- intentional raw output, admin-trusted.
+}
+add_shortcode( 'jst_part', 'jst_part_shortcode' );
+
+/**
+ * Inline JS for Copy buttons: list screen shortcode copy + edit screen shortcode copy.
+ */
+function jst_part_admin_footer_js() {
+	$screen = get_current_screen();
+	if ( ! $screen || ( 'jst_part' !== $screen->post_type && 'edit-jst_part' !== $screen->id ) ) {
+		return;
+	}
+	?>
+	<script>
+	document.addEventListener( 'click', function ( e ) {
+		var btn = e.target.closest( '.jst-copy-btn' );
+		if ( ! btn ) { return; }
+		var text = btn.getAttribute( 'data-copy' );
+		if ( ! text ) { return; }
+		navigator.clipboard.writeText( text ).then( function () {
+			var orig = btn.textContent;
+			btn.textContent = 'Copied!';
+			setTimeout( function () { btn.textContent = orig; }, 1500 );
+		} );
+	} );
+
+	/* Edit screen: copy shortcode from the preview code element */
+	var copyBtn = document.getElementById( 'jst_copy_shortcode' );
+	if ( copyBtn ) {
+		copyBtn.addEventListener( 'click', function () {
+			var preview = document.getElementById( 'jst_shortcode_preview' );
+			if ( ! preview ) { return; }
+			navigator.clipboard.writeText( preview.textContent ).then( function () {
+				var orig = copyBtn.textContent;
+				copyBtn.textContent = 'Copied!';
+				setTimeout( function () { copyBtn.textContent = orig; }, 1500 );
+			} );
+		} );
+	}
+	</script>
+	<?php
+}
+add_action( 'admin_footer', 'jst_part_admin_footer_js' );
+
+/**
+ * ------------------------------------------------------------------
+ * ACF CPT compatibility: make theme templates available on any
+ * post type that declares 'page-attributes' support — including
+ * custom post types registered via ACF.
+ * ------------------------------------------------------------------
+ */
+function jst_make_templates_global( $templates, $theme, $post, $post_type ) {
+	if ( 'page' === $post_type || ! post_type_supports( $post_type, 'page-attributes' ) ) {
+		return $templates;
+	}
+
+	$page_templates = wp_get_theme()->get_page_templates( null, 'page' );
+	return array_merge( $templates, $page_templates );
+}
+add_filter( 'theme_templates', 'jst_make_templates_global', 10, 4 );
