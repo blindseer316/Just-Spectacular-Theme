@@ -28,6 +28,10 @@ function jst_register_updater() {
 
 	require_once $puc_file;
 
+	if ( ! class_exists( 'PucFactory' ) ) {
+		return;
+	}
+
 	$update_checker = PucFactory::buildUpdateChecker(
 		'https://github.com/blindseer316/Just-Spectacular-Theme/',
 		__FILE__,
