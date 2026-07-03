@@ -83,7 +83,9 @@ add_action( 'wp_enqueue_scripts', 'jst_scripts' );
  * field's own native undo stack.
  */
 function jst_admin_scripts( $hook ) {
-	if ( ! in_array( $hook, array( 'post.php', 'post-new.php', 'appearance_page_jst-theme-options', 'jst_part_page_jst-template-parts' ), true ) ) {
+	$allowed = array( 'post.php', 'post-new.php', 'appearance_page_jst-theme-options', 'edit.php' );
+	$is_jst_part_list = ( 'edit.php' === $hook && isset( $_GET['post_type'] ) && 'jst_part' === $_GET['post_type'] );
+	if ( ! in_array( $hook, $allowed, true ) || ( 'edit.php' === $hook && ! $is_jst_part_list ) ) {
 		return;
 	}
 	wp_enqueue_script( 'jst-admin', get_template_directory_uri() . '/js/admin.js', array(), JST_VERSION, true );

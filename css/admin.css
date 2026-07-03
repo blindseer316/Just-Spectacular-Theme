@@ -25,7 +25,7 @@
 /* Copy button in list table shortcode column */
 .jst-copy-btn {
 	font-size: 11px !important;
-	line-height: 1.4 !important;
+	line-height: 1.6 !important;
 	min-height: 20px !important;
 	height: 20px !important;
 	padding: 0 6px !important;
@@ -34,10 +34,15 @@
 	background: transparent !important;
 	border: 1px solid #c3c4c7 !important;
 	border-radius: 3px !important;
+	border-width: 1px !important;
+	border-style: solid !important;
 	color: #787c82 !important;
 	box-shadow: none !important;
 	text-shadow: none !important;
-	cursor: pointer;
+	text-decoration: none !important;
+	cursor: pointer !important;
+	display: inline-block !important;
+	white-space: nowrap !important;
 }
 
 .jst-copy-btn:hover,
