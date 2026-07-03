@@ -7,44 +7,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.4.0' );
+define( 'JST_VERSION', '1.4.3' );
 
-/**
- * ------------------------------------------------------------------
- * GitHub auto-updater (private repo via plugin-update-checker)
- *
- * Add this constant to wp-config.php on each site:
- *   define( 'JST_GITHUB_TOKEN', 'your_personal_access_token' );
- *
- * The token needs: Contents (read) + Metadata (read) on the repo.
- * Generate at: GitHub > Settings > Developer Settings > Fine-grained tokens.
- * ------------------------------------------------------------------
- */
-function jst_register_updater() {
-	$puc_file = get_template_directory() . '/vendor/plugin-update-checker/load-v5p7.php';
-	if ( ! file_exists( $puc_file ) ) {
-		return;
-	}
-
-	require_once $puc_file;
-
-	if ( ! class_exists( 'YahnisElsts\PluginUpdateChecker\v5\PucFactory' ) ) {
-		return;
-	}
-
-	$update_checker = \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
-		'https://github.com/blindseer316/Just-Spectacular-Theme/',
-		get_template_directory() . '/style.css',
-		'just-spectacular-theme'
-	);
-
-	$update_checker->setBranch( 'main' );
-
-	if ( defined( 'JST_GITHUB_TOKEN' ) && JST_GITHUB_TOKEN ) {
-		$update_checker->setAuthentication( JST_GITHUB_TOKEN );
-	}
-}
-add_action( 'init', 'jst_register_updater' );
 
 /**
  * Theme setup.
