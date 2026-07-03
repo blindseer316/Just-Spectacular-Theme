@@ -34,7 +34,7 @@ function jst_register_updater() {
 
 	$update_checker = \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
 		'https://github.com/blindseer316/Just-Spectacular-Theme/',
-		__FILE__,
+		get_template_directory() . '/style.css',
 		'just-spectacular-theme'
 	);
 
