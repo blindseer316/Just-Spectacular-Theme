@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.4.3' );
+define( 'JST_VERSION', '1.5.0' );
 
 
 /**
@@ -114,9 +114,22 @@ add_action( 'admin_menu', 'jst_register_theme_options_page' );
 
 function jst_theme_options_fields() {
 	return array(
-		'jst_header_scripts' => __( 'Header Scripts', 'just-spectacular-theme' ),
-		'jst_navigation'     => __( 'Navigation', 'just-spectacular-theme' ),
-		'jst_footer'         => __( 'Footer', 'just-spectacular-theme' ),
+		'jst_navigation'     => array(
+			'label'       => __( 'Header Nav / Menu', 'just-spectacular-theme' ),
+			'description' => __( 'Outputs at the very start of <body> via wp_body_open — use for your global header and navigation markup.', 'just-spectacular-theme' ),
+		),
+		'jst_footer'         => array(
+			'label'       => __( 'Footer HTML', 'just-spectacular-theme' ),
+			'description' => __( 'Outputs after the page content, before Footer Scripts — use for your global footer design and navigation markup.', 'just-spectacular-theme' ),
+		),
+		'jst_header_scripts' => array(
+			'label'       => __( 'Header Scripts', 'just-spectacular-theme' ),
+			'description' => __( 'Outputs inside <head> — use for external CSS links, fonts, and other head-level scripts.', 'just-spectacular-theme' ),
+		),
+		'jst_footer_scripts' => array(
+			'label'       => __( 'Footer Scripts', 'just-spectacular-theme' ),
+			'description' => __( 'Outputs before </body>, after Footer HTML — use for JavaScript, analytics, and tracking scripts.', 'just-spectacular-theme' ),
+		),
 	);
 }
 
@@ -138,15 +151,15 @@ function jst_render_theme_options_page() {
 		echo '<div class="updated"><p>' . esc_html__( 'Theme options saved.', 'just-spectacular-theme' ) . '</p></div>';
 	}
 
-	$fields           = jst_theme_options_fields();
-	$disable_prose    = get_option( 'jst_disable_tailwind_prose', '' );
+	$fields        = jst_theme_options_fields();
+	$disable_prose = get_option( 'jst_disable_tailwind_prose', '' );
 	?>
 	<div class="wrap">
 		<h1><?php esc_html_e( 'Theme Options', 'just-spectacular-theme' ); ?></h1>
 		<form method="post" action="">
 			<?php wp_nonce_field( 'jst_save_theme_options', 'jst_theme_options_nonce' ); ?>
-			<?php foreach ( $fields as $field_id => $field_label ) : ?>
-				<h2><?php echo esc_html( $field_label ); ?></h2>
+			<?php foreach ( $fields as $field_id => $field ) : ?>
+				<h2><?php echo esc_html( $field['label'] ); ?></h2>
 				<p>
 					<button type="button" class="button jst-quick-tag-btn" data-target="<?php echo esc_attr( $field_id ); ?>" data-tag="style"><?php esc_html_e( 'Insert <style>', 'just-spectacular-theme' ); ?></button>
 					<button type="button" class="button jst-quick-tag-btn" data-target="<?php echo esc_attr( $field_id ); ?>" data-tag="script"><?php esc_html_e( 'Insert <script>', 'just-spectacular-theme' ); ?></button>
@@ -155,6 +168,7 @@ function jst_render_theme_options_page() {
 				<p>
 					<textarea id="<?php echo esc_attr( $field_id ); ?>" name="<?php echo esc_attr( $field_id ); ?>" rows="14" class="jst-metabox-field" style="width:100%;font-family:monospace;"><?php echo get_option( $field_id, '' ); // phpcs:ignore -- intentionally unescaped raw HTML/script storage. ?></textarea>
 				</p>
+				<p><span class="description"><?php echo esc_html( $field['description'] ); ?></span></p>
 			<?php endforeach; ?>
 
 			<h2><?php esc_html_e( 'Content Styling', 'just-spectacular-theme' ); ?></h2>
@@ -213,12 +227,20 @@ function jst_output_navigation() {
 add_action( 'wp_body_open', 'jst_output_navigation' );
 
 /**
- * Output Footer markup/scripts right before </body>.
+ * Output Footer HTML markup right before </body>, before footer scripts.
  */
 function jst_output_footer() {
 	echo get_option( 'jst_footer', '' ); // phpcs:ignore -- intentional raw output, admin-trusted.
 }
-add_action( 'jst_before_closing_body', 'jst_output_footer' );
+add_action( 'jst_before_closing_body', 'jst_output_footer', 10 );
+
+/**
+ * Output Footer Scripts right before </body>, after Footer HTML.
+ */
+function jst_output_footer_scripts() {
+	echo get_option( 'jst_footer_scripts', '' ); // phpcs:ignore -- intentional raw output, admin-trusted.
+}
+add_action( 'jst_before_closing_body', 'jst_output_footer_scripts', 20 );
 
 /**
  * ------------------------------------------------------------------
