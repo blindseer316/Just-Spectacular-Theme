@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.5.0' );
+define( 'JST_VERSION', '1.5.1' );
 
 
 /**
@@ -26,6 +26,8 @@ function jst_setup() {
 			'primary' => __( 'Primary Menu', 'just-spectacular-theme' ),
 		)
 	);
+
+	add_post_type_support( 'post', 'page-attributes' );
 }
 add_action( 'after_setup_theme', 'jst_setup' );
 
