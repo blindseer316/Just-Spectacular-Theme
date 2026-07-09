@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.5.3' );
+define( 'JST_VERSION', '1.5.4' );
 
 
 /**
@@ -150,11 +150,13 @@ function jst_render_theme_options_page() {
 			}
 		}
 		update_option( 'jst_disable_tailwind_prose', isset( $_POST['jst_disable_tailwind_prose'] ) ? '1' : '' );
+		update_option( 'jst_prose_invert', isset( $_POST['jst_prose_invert'] ) ? '1' : '' );
 		echo '<div class="updated"><p>' . esc_html__( 'Theme options saved.', 'just-spectacular-theme' ) . '</p></div>';
 	}
 
 	$fields        = jst_theme_options_fields();
 	$disable_prose = get_option( 'jst_disable_tailwind_prose', '' );
+	$prose_invert  = get_option( 'jst_prose_invert', '' );
 	?>
 	<div class="wrap">
 		<h1><?php esc_html_e( 'Theme Options', 'just-spectacular-theme' ); ?></h1>
@@ -184,6 +186,16 @@ function jst_render_theme_options_page() {
 					<?php esc_html_e( 'The "prose" class is added to post/page content by default (requires the Tailwind Typography plugin loaded via Header Scripts). Check this box to remove it sitewide.', 'just-spectacular-theme' ); ?>
 				</span>
 			</p>
+			<p>
+				<label>
+					<input type="checkbox" name="jst_prose_invert" value="1" <?php checked( $prose_invert, '1' ); ?> />
+					<?php esc_html_e( 'Prose invert (dark background)', 'just-spectacular-theme' ); ?>
+				</label>
+				<br>
+				<span class="description">
+					<?php esc_html_e( 'Adds "prose-invert" sitewide — flips prose text/heading/link colors to light variants for dark background sites. Can also be set per-page in Page Settings.', 'just-spectacular-theme' ); ?>
+				</span>
+			</p>
 
 			<?php submit_button( __( 'Save Options', 'just-spectacular-theme' ) ); ?>
 		</form>
@@ -208,7 +220,9 @@ function jst_content_class( $extra = '' ) {
 		// content width, not the "prose" class.
 		$classes[] = 'prose max-w-none';
 
-		if ( is_singular() && get_post_meta( get_the_ID(), '_jst_prose_invert', true ) ) {
+		$global_invert   = get_option( 'jst_prose_invert', '' );
+		$per_page_invert = is_singular() ? get_post_meta( get_the_ID(), '_jst_prose_invert', true ) : '';
+		if ( $global_invert || $per_page_invert ) {
 			$classes[] = 'prose-invert';
 		}
 	}
