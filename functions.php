@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.5.2' );
+define( 'JST_VERSION', '1.5.3' );
 
 
 /**
@@ -207,6 +207,10 @@ function jst_content_class( $extra = '' ) {
 		// per-page Width setting on the outer container is what governs
 		// content width, not the "prose" class.
 		$classes[] = 'prose max-w-none';
+
+		if ( is_singular() && get_post_meta( get_the_ID(), '_jst_prose_invert', true ) ) {
+			$classes[] = 'prose-invert';
+		}
 	}
 
 	return esc_attr( implode( ' ', $classes ) );
@@ -278,6 +282,7 @@ function jst_render_page_settings_meta_box( $post ) {
 	$footer_code     = get_post_meta( $post->ID, '_jst_page_footer_code', true );
 	$disable_style   = get_post_meta( $post->ID, '_jst_disable_theme_style', true );
 	$hide_post_meta  = get_post_meta( $post->ID, '_jst_hide_post_meta', true );
+	$prose_invert    = get_post_meta( $post->ID, '_jst_prose_invert', true );
 	?>
 	<p>
 		<label for="jst_page_width"><strong><?php esc_html_e( 'Width', 'just-spectacular-theme' ); ?></strong></label><br>
@@ -309,6 +314,16 @@ function jst_render_page_settings_meta_box( $post ) {
 		<br>
 		<span class="description">
 			<?php esc_html_e( 'Runs in addition to the global Footer box (Appearance > Theme Options), not instead of.', 'just-spectacular-theme' ); ?>
+		</span>
+	</p>
+	<p>
+		<label>
+			<input type="checkbox" name="jst_prose_invert" value="1" <?php checked( $prose_invert, '1' ); ?> />
+			<?php esc_html_e( 'Prose invert (dark background)', 'just-spectacular-theme' ); ?>
+		</label>
+		<br>
+		<span class="description">
+			<?php esc_html_e( 'Adds "prose-invert" to the content class — flips prose text/heading/link colors to light variants for use on dark backgrounds.', 'just-spectacular-theme' ); ?>
 		</span>
 	</p>
 	<p>
@@ -361,6 +376,7 @@ function jst_save_page_settings_meta_box( $post_id ) {
 		update_post_meta( $post_id, '_jst_page_footer_code', wp_unslash( $_POST['jst_page_footer_code'] ) );
 	}
 
+	update_post_meta( $post_id, '_jst_prose_invert', isset( $_POST['jst_prose_invert'] ) ? '1' : '' );
 	update_post_meta( $post_id, '_jst_hide_post_meta', isset( $_POST['jst_hide_post_meta'] ) ? '1' : '' );
 	update_post_meta( $post_id, '_jst_disable_theme_style', isset( $_POST['jst_disable_theme_style'] ) ? '1' : '' );
 }
