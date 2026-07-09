@@ -11,7 +11,10 @@ get_header();
 		while ( have_posts() ) :
 			the_post();
 			?>
-			<article <?php post_class(); ?>>
+			<?php
+				$jst_article_class = get_post_meta( get_the_ID(), '_jst_prose_invert', true ) || get_option( 'jst_prose_invert', '' ) ? 'prose-invert' : '';
+				?>
+				<article <?php post_class( $jst_article_class ); ?>>
 				<h1 class="jst-single-title"><?php the_title(); ?></h1>
 				<p class="jst-single-meta">
 					<?php
