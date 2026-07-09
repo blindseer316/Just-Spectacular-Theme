@@ -2,7 +2,7 @@
 Theme Name: Just Spectacular Theme
 Author: EarthbreakDesigns
 Description: A palette-agnostic base theme. Sitewide colors and markup are injected via Theme Options (Header Scripts, Navigation, Footer) so this shell can be reused across client sites.
-Version: 1.5.4
+Version: 1.5.5
 Text Domain: just-spectacular-theme
 */
 
@@ -282,12 +282,23 @@ h1.jst-single-title {
 	margin-bottom: 0.75rem;
 	padding-bottom: 0.75rem;
 	border-bottom: 1px solid var(--jst-border);
+	color: var(--jst-text);
 }
 
 .jst-single-meta {
 	color: var(--jst-muted);
 	font-size: 0.9rem;
 	margin-bottom: 1.5rem;
+}
+
+/* Dark background (prose-invert) overrides */
+.prose-invert h1.jst-single-title {
+	color: #f9fafb;
+	border-bottom-color: rgba(255, 255, 255, 0.15);
+}
+
+.prose-invert .jst-single-meta {
+	color: rgba(255, 255, 255, 0.5);
 }
 
 .jst-single-thumb {
