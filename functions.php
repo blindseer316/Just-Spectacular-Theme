@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.5.1' );
+define( 'JST_VERSION', '1.5.2' );
 
 
 /**
@@ -277,6 +277,7 @@ function jst_render_page_settings_meta_box( $post ) {
 	$header_code     = get_post_meta( $post->ID, '_jst_page_header_code', true );
 	$footer_code     = get_post_meta( $post->ID, '_jst_page_footer_code', true );
 	$disable_style   = get_post_meta( $post->ID, '_jst_disable_theme_style', true );
+	$hide_post_meta  = get_post_meta( $post->ID, '_jst_hide_post_meta', true );
 	?>
 	<p>
 		<label for="jst_page_width"><strong><?php esc_html_e( 'Width', 'just-spectacular-theme' ); ?></strong></label><br>
@@ -308,6 +309,16 @@ function jst_render_page_settings_meta_box( $post ) {
 		<br>
 		<span class="description">
 			<?php esc_html_e( 'Runs in addition to the global Footer box (Appearance > Theme Options), not instead of.', 'just-spectacular-theme' ); ?>
+		</span>
+	</p>
+	<p>
+		<label>
+			<input type="checkbox" name="jst_hide_post_meta" value="1" <?php checked( $hide_post_meta, '1' ); ?> />
+			<?php esc_html_e( 'Hide post meta', 'just-spectacular-theme' ); ?>
+		</label>
+		<br>
+		<span class="description">
+			<?php esc_html_e( 'Hides the date/author meta line on the Full Width — With Title template.', 'just-spectacular-theme' ); ?>
 		</span>
 	</p>
 	<p>
@@ -350,6 +361,7 @@ function jst_save_page_settings_meta_box( $post_id ) {
 		update_post_meta( $post_id, '_jst_page_footer_code', wp_unslash( $_POST['jst_page_footer_code'] ) );
 	}
 
+	update_post_meta( $post_id, '_jst_hide_post_meta', isset( $_POST['jst_hide_post_meta'] ) ? '1' : '' );
 	update_post_meta( $post_id, '_jst_disable_theme_style', isset( $_POST['jst_disable_theme_style'] ) ? '1' : '' );
 }
 add_action( 'save_post', 'jst_save_page_settings_meta_box' );
