@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.6.0' );
+define( 'JST_VERSION', '1.6.2' );
 
 
 /**
@@ -125,8 +125,8 @@ function jst_theme_options_fields() {
 			'description' => __( 'Outputs after the page content, before Footer Scripts — use for your global footer design and navigation markup.', 'just-spectacular-theme' ),
 		),
 		'jst_header_scripts' => array(
-			'label'       => __( 'Header Scripts', 'just-spectacular-theme' ),
-			'description' => __( 'Outputs inside <head> — use for external CSS links, fonts, and other head-level scripts.', 'just-spectacular-theme' ),
+			'label'       => __( 'Header Scripts & Custom CSS', 'just-spectacular-theme' ),
+			'description' => __( 'Outputs inside <head> — use for external CSS links, fonts, custom <style> blocks, and other head-level scripts.', 'just-spectacular-theme' ),
 		),
 		'jst_footer_scripts' => array(
 			'label'       => __( 'Footer Scripts', 'just-spectacular-theme' ),
@@ -254,6 +254,9 @@ add_action( 'wp_body_open', 'jst_output_navigation', 20 );
  * Output Footer HTML markup right before </body>, before footer scripts.
  */
 function jst_output_footer() {
+	if ( is_singular() && get_post_meta( get_the_ID(), '_jst_hide_global_footer', true ) ) {
+		return;
+	}
 	echo get_option( 'jst_footer', '' ); // phpcs:ignore -- intentional raw output, admin-trusted.
 }
 add_action( 'jst_before_closing_body', 'jst_output_footer', 10 );
@@ -262,6 +265,9 @@ add_action( 'jst_before_closing_body', 'jst_output_footer', 10 );
  * Output Footer Scripts right before </body>, after Footer HTML.
  */
 function jst_output_footer_scripts() {
+	if ( is_singular() && get_post_meta( get_the_ID(), '_jst_hide_global_footer', true ) ) {
+		return;
+	}
 	echo get_option( 'jst_footer_scripts', '' ); // phpcs:ignore -- intentional raw output, admin-trusted.
 }
 add_action( 'jst_before_closing_body', 'jst_output_footer_scripts', 20 );
@@ -301,7 +307,8 @@ function jst_render_page_settings_meta_box( $post ) {
 	$disable_style   = get_post_meta( $post->ID, '_jst_disable_theme_style', true );
 	$hide_post_meta   = get_post_meta( $post->ID, '_jst_hide_post_meta', true );
 	$prose_invert     = get_post_meta( $post->ID, '_jst_prose_invert', true );
-	$hide_global_nav  = get_post_meta( $post->ID, '_jst_hide_global_nav', true );
+	$hide_global_nav    = get_post_meta( $post->ID, '_jst_hide_global_nav', true );
+	$hide_global_footer = get_post_meta( $post->ID, '_jst_hide_global_footer', true );
 	?>
 	<p>
 		<label for="jst_page_width"><strong><?php esc_html_e( 'Width', 'just-spectacular-theme' ); ?></strong></label><br>
@@ -367,6 +374,16 @@ function jst_render_page_settings_meta_box( $post ) {
 	</p>
 	<p>
 		<label>
+			<input type="checkbox" name="jst_hide_global_footer" value="1" <?php checked( $hide_global_footer, '1' ); ?> />
+			<?php esc_html_e( 'Hide global footer on this page', 'just-spectacular-theme' ); ?>
+		</label>
+		<br>
+		<span class="description">
+			<?php esc_html_e( 'Suppresses the global Footer HTML and Footer Scripts (Theme Options) on this page. Use with a Template Part set to "Before </body>" to show a custom footer instead.', 'just-spectacular-theme' ); ?>
+		</span>
+	</p>
+	<p>
+		<label>
 			<input type="checkbox" name="jst_disable_theme_style" value="1" <?php checked( $disable_style, '1' ); ?> />
 			<?php esc_html_e( 'Disable theme style.css on this page', 'just-spectacular-theme' ); ?>
 		</label>
@@ -408,6 +425,7 @@ function jst_save_page_settings_meta_box( $post_id ) {
 	update_post_meta( $post_id, '_jst_prose_invert', isset( $_POST['jst_prose_invert'] ) ? '1' : '' );
 	update_post_meta( $post_id, '_jst_hide_post_meta', isset( $_POST['jst_hide_post_meta'] ) ? '1' : '' );
 	update_post_meta( $post_id, '_jst_hide_global_nav', isset( $_POST['jst_hide_global_nav'] ) ? '1' : '' );
+	update_post_meta( $post_id, '_jst_hide_global_footer', isset( $_POST['jst_hide_global_footer'] ) ? '1' : '' );
 	update_post_meta( $post_id, '_jst_disable_theme_style', isset( $_POST['jst_disable_theme_style'] ) ? '1' : '' );
 }
 add_action( 'save_post', 'jst_save_page_settings_meta_box' );
