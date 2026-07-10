@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.6.2' );
+define( 'JST_VERSION', '1.7.1' );
 
 
 /**
@@ -287,9 +287,18 @@ function jst_add_page_settings_meta_box() {
 		}
 
 		add_meta_box(
-			'jst_page_settings',
-			__( 'Page Settings', 'just-spectacular-theme' ),
-			'jst_render_page_settings_meta_box',
+			'jst_page_options',
+			__( 'JST: Page Options', 'just-spectacular-theme' ),
+			'jst_render_page_options_meta_box',
+			$post_type,
+			'side',
+			'high'
+		);
+
+		add_meta_box(
+			'jst_page_code',
+			__( 'JST: Page Code', 'just-spectacular-theme' ),
+			'jst_render_page_code_meta_box',
 			$post_type,
 			'normal',
 			'default'
@@ -298,26 +307,81 @@ function jst_add_page_settings_meta_box() {
 }
 add_action( 'add_meta_boxes', 'jst_add_page_settings_meta_box' );
 
-function jst_render_page_settings_meta_box( $post ) {
+function jst_render_page_options_meta_box( $post ) {
 	wp_nonce_field( 'jst_save_page_settings', 'jst_page_settings_nonce' );
 
-	$width           = get_post_meta( $post->ID, '_jst_page_width', true );
-	$header_code     = get_post_meta( $post->ID, '_jst_page_header_code', true );
-	$footer_code     = get_post_meta( $post->ID, '_jst_page_footer_code', true );
-	$disable_style   = get_post_meta( $post->ID, '_jst_disable_theme_style', true );
-	$hide_post_meta   = get_post_meta( $post->ID, '_jst_hide_post_meta', true );
-	$prose_invert     = get_post_meta( $post->ID, '_jst_prose_invert', true );
+	$width              = get_post_meta( $post->ID, '_jst_page_width', true );
+	$disable_style      = get_post_meta( $post->ID, '_jst_disable_theme_style', true );
+	$hide_post_meta     = get_post_meta( $post->ID, '_jst_hide_post_meta', true );
+	$prose_invert       = get_post_meta( $post->ID, '_jst_prose_invert', true );
 	$hide_global_nav    = get_post_meta( $post->ID, '_jst_hide_global_nav', true );
 	$hide_global_footer = get_post_meta( $post->ID, '_jst_hide_global_footer', true );
 	?>
 	<p>
 		<label for="jst_page_width"><strong><?php esc_html_e( 'Width', 'just-spectacular-theme' ); ?></strong></label><br>
-		<input type="text" id="jst_page_width" name="jst_page_width" value="<?php echo esc_attr( $width ); ?>" placeholder="80rem" style="width:100%;max-width:300px;" />
+		<input type="text" id="jst_page_width" name="jst_page_width" value="<?php echo esc_attr( $width ); ?>" placeholder="80rem" style="width:100%;" />
 		<br>
 		<span class="description">
-			<?php esc_html_e( 'Max content width, used by the Default, Plain, and Full Width templates. Accepts any valid CSS value (e.g. 80rem, 1200px, 100%, none). Defaults to 80rem (100% on Full Width) if left blank.', 'just-spectacular-theme' ); ?>
+			<?php esc_html_e( 'Max content width. Accepts any CSS value (e.g. 80rem, 1200px, 100%). Defaults to 80rem (100% on Full Width) if blank.', 'just-spectacular-theme' ); ?>
 		</span>
 	</p>
+	<p>
+		<label>
+			<input type="checkbox" name="jst_prose_invert" value="1" <?php checked( $prose_invert, '1' ); ?> />
+			<?php esc_html_e( 'Prose invert (dark background)', 'just-spectacular-theme' ); ?>
+		</label>
+		<br>
+		<span class="description">
+			<?php esc_html_e( 'Flips prose text/heading/link colors to light for dark backgrounds.', 'just-spectacular-theme' ); ?>
+		</span>
+	</p>
+	<p>
+		<label>
+			<input type="checkbox" name="jst_hide_post_meta" value="1" <?php checked( $hide_post_meta, '1' ); ?> />
+			<?php esc_html_e( 'Hide post meta', 'just-spectacular-theme' ); ?>
+		</label>
+		<br>
+		<span class="description">
+			<?php esc_html_e( 'Hides the date/author line on the Full Width — With Title template.', 'just-spectacular-theme' ); ?>
+		</span>
+	</p>
+	<p>
+		<label>
+			<input type="checkbox" name="jst_hide_global_nav" value="1" <?php checked( $hide_global_nav, '1' ); ?> />
+			<?php esc_html_e( 'Hide global nav', 'just-spectacular-theme' ); ?>
+		</label>
+		<br>
+		<span class="description">
+			<?php esc_html_e( 'Suppresses the global Header Nav / Menu (Theme Options) on this page.', 'just-spectacular-theme' ); ?>
+		</span>
+	</p>
+	<p>
+		<label>
+			<input type="checkbox" name="jst_hide_global_footer" value="1" <?php checked( $hide_global_footer, '1' ); ?> />
+			<?php esc_html_e( 'Hide global footer', 'just-spectacular-theme' ); ?>
+		</label>
+		<br>
+		<span class="description">
+			<?php esc_html_e( 'Suppresses the global Footer HTML and Footer Scripts (Theme Options) on this page.', 'just-spectacular-theme' ); ?>
+		</span>
+	</p>
+	<p>
+		<label>
+			<input type="checkbox" name="jst_disable_theme_style" value="1" <?php checked( $disable_style, '1' ); ?> />
+			<?php esc_html_e( 'Disable theme style.css', 'just-spectacular-theme' ); ?>
+		</label>
+		<br>
+		<span class="description">
+			<?php esc_html_e( 'Removes the theme stylesheet on this page — for fully custom-built pages.', 'just-spectacular-theme' ); ?>
+		</span>
+	</p>
+	<?php
+}
+
+function jst_render_page_code_meta_box( $post ) {
+	$header_code = get_post_meta( $post->ID, '_jst_page_header_code', true );
+	$footer_code = get_post_meta( $post->ID, '_jst_page_footer_code', true );
+	?>
 	<p>
 		<label for="jst_page_header_code"><strong><?php esc_html_e( 'Page Header Code', 'just-spectacular-theme' ); ?></strong></label><br>
 		<button type="button" class="button jst-quick-tag-btn" data-target="jst_page_header_code" data-tag="style"><?php esc_html_e( 'Insert <style>', 'just-spectacular-theme' ); ?></button>
@@ -327,7 +391,7 @@ function jst_render_page_settings_meta_box( $post ) {
 		<textarea id="jst_page_header_code" name="jst_page_header_code" rows="8" class="jst-metabox-field" style="width:100%;font-family:monospace;"><?php echo esc_textarea( $header_code ); ?></textarea>
 		<br>
 		<span class="description">
-			<?php esc_html_e( 'Runs in addition to the global Header Scripts (Appearance > Theme Options), not instead of.', 'just-spectacular-theme' ); ?>
+			<?php esc_html_e( 'Outputs inside <head> — runs in addition to global Header Scripts (Theme Options), not instead of.', 'just-spectacular-theme' ); ?>
 		</span>
 	</p>
 	<p>
@@ -339,57 +403,7 @@ function jst_render_page_settings_meta_box( $post ) {
 		<textarea id="jst_page_footer_code" name="jst_page_footer_code" rows="8" class="jst-metabox-field" style="width:100%;font-family:monospace;"><?php echo esc_textarea( $footer_code ); ?></textarea>
 		<br>
 		<span class="description">
-			<?php esc_html_e( 'Runs in addition to the global Footer box (Appearance > Theme Options), not instead of.', 'just-spectacular-theme' ); ?>
-		</span>
-	</p>
-	<p>
-		<label>
-			<input type="checkbox" name="jst_prose_invert" value="1" <?php checked( $prose_invert, '1' ); ?> />
-			<?php esc_html_e( 'Prose invert (dark background)', 'just-spectacular-theme' ); ?>
-		</label>
-		<br>
-		<span class="description">
-			<?php esc_html_e( 'Adds "prose-invert" to the content class — flips prose text/heading/link colors to light variants for use on dark backgrounds.', 'just-spectacular-theme' ); ?>
-		</span>
-	</p>
-	<p>
-		<label>
-			<input type="checkbox" name="jst_hide_post_meta" value="1" <?php checked( $hide_post_meta, '1' ); ?> />
-			<?php esc_html_e( 'Hide post meta', 'just-spectacular-theme' ); ?>
-		</label>
-		<br>
-		<span class="description">
-			<?php esc_html_e( 'Hides the date/author meta line on the Full Width — With Title template.', 'just-spectacular-theme' ); ?>
-		</span>
-	</p>
-	<p>
-		<label>
-			<input type="checkbox" name="jst_hide_global_nav" value="1" <?php checked( $hide_global_nav, '1' ); ?> />
-			<?php esc_html_e( 'Hide global nav on this page', 'just-spectacular-theme' ); ?>
-		</label>
-		<br>
-		<span class="description">
-			<?php esc_html_e( 'Suppresses the global Header Nav / Menu (Theme Options) on this page. Use with a Template Part set to "After <body>" to show a custom nav instead.', 'just-spectacular-theme' ); ?>
-		</span>
-	</p>
-	<p>
-		<label>
-			<input type="checkbox" name="jst_hide_global_footer" value="1" <?php checked( $hide_global_footer, '1' ); ?> />
-			<?php esc_html_e( 'Hide global footer on this page', 'just-spectacular-theme' ); ?>
-		</label>
-		<br>
-		<span class="description">
-			<?php esc_html_e( 'Suppresses the global Footer HTML and Footer Scripts (Theme Options) on this page. Use with a Template Part set to "Before </body>" to show a custom footer instead.', 'just-spectacular-theme' ); ?>
-		</span>
-	</p>
-	<p>
-		<label>
-			<input type="checkbox" name="jst_disable_theme_style" value="1" <?php checked( $disable_style, '1' ); ?> />
-			<?php esc_html_e( 'Disable theme style.css on this page', 'just-spectacular-theme' ); ?>
-		</label>
-		<br>
-		<span class="description">
-			<?php esc_html_e( 'When checked, the theme\'s style.css (nav fallback, headings, cards, etc.) is not loaded on this page/post — useful for fully custom-built pages.', 'just-spectacular-theme' ); ?>
+			<?php esc_html_e( 'Outputs before </body> — runs in addition to global Footer Scripts (Theme Options), not instead of.', 'just-spectacular-theme' ); ?>
 		</span>
 	</p>
 	<?php
@@ -956,6 +970,23 @@ function jst_part_admin_footer_js() {
 	<?php
 }
 add_action( 'admin_footer', 'jst_part_admin_footer_js' );
+
+/**
+ * Branding header on the Template Parts list screen.
+ */
+function jst_part_list_header() {
+	$screen = get_current_screen();
+	if ( ! $screen || 'edit-jst_part' !== $screen->id ) {
+		return;
+	}
+	?>
+	<div style="margin: 1rem 0 0.5rem;">
+		<h2 style="margin:0 0 0.25rem;font-size:1.3rem;">JST Theme — Template Parts</h2>
+		<p style="margin:0;color:#646970;">Reusable HTML snippets managed by Just Spectacular Theme. Insert via shortcode <code>[jst_part name="…"]</code> or set a Location to auto-output on specific pages.</p>
+	</div>
+	<?php
+}
+add_action( 'admin_notices', 'jst_part_list_header' );
 
 /**
  * ------------------------------------------------------------------
