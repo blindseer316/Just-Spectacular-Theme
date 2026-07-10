@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.5.6' );
+define( 'JST_VERSION', '1.6.0' );
 
 
 /**
@@ -240,11 +240,15 @@ add_action( 'wp_head', 'jst_output_header_scripts' );
 
 /**
  * Output Navigation markup at wp_body_open.
+ * Suppressed on pages with _jst_hide_global_nav set.
  */
 function jst_output_navigation() {
+	if ( is_singular() && get_post_meta( get_the_ID(), '_jst_hide_global_nav', true ) ) {
+		return;
+	}
 	echo get_option( 'jst_navigation', '' ); // phpcs:ignore -- intentional raw output, admin-trusted.
 }
-add_action( 'wp_body_open', 'jst_output_navigation' );
+add_action( 'wp_body_open', 'jst_output_navigation', 20 );
 
 /**
  * Output Footer HTML markup right before </body>, before footer scripts.
@@ -295,8 +299,9 @@ function jst_render_page_settings_meta_box( $post ) {
 	$header_code     = get_post_meta( $post->ID, '_jst_page_header_code', true );
 	$footer_code     = get_post_meta( $post->ID, '_jst_page_footer_code', true );
 	$disable_style   = get_post_meta( $post->ID, '_jst_disable_theme_style', true );
-	$hide_post_meta  = get_post_meta( $post->ID, '_jst_hide_post_meta', true );
-	$prose_invert    = get_post_meta( $post->ID, '_jst_prose_invert', true );
+	$hide_post_meta   = get_post_meta( $post->ID, '_jst_hide_post_meta', true );
+	$prose_invert     = get_post_meta( $post->ID, '_jst_prose_invert', true );
+	$hide_global_nav  = get_post_meta( $post->ID, '_jst_hide_global_nav', true );
 	?>
 	<p>
 		<label for="jst_page_width"><strong><?php esc_html_e( 'Width', 'just-spectacular-theme' ); ?></strong></label><br>
@@ -352,6 +357,16 @@ function jst_render_page_settings_meta_box( $post ) {
 	</p>
 	<p>
 		<label>
+			<input type="checkbox" name="jst_hide_global_nav" value="1" <?php checked( $hide_global_nav, '1' ); ?> />
+			<?php esc_html_e( 'Hide global nav on this page', 'just-spectacular-theme' ); ?>
+		</label>
+		<br>
+		<span class="description">
+			<?php esc_html_e( 'Suppresses the global Header Nav / Menu (Theme Options) on this page. Use with a Template Part set to "After <body>" to show a custom nav instead.', 'just-spectacular-theme' ); ?>
+		</span>
+	</p>
+	<p>
+		<label>
 			<input type="checkbox" name="jst_disable_theme_style" value="1" <?php checked( $disable_style, '1' ); ?> />
 			<?php esc_html_e( 'Disable theme style.css on this page', 'just-spectacular-theme' ); ?>
 		</label>
@@ -392,6 +407,7 @@ function jst_save_page_settings_meta_box( $post_id ) {
 
 	update_post_meta( $post_id, '_jst_prose_invert', isset( $_POST['jst_prose_invert'] ) ? '1' : '' );
 	update_post_meta( $post_id, '_jst_hide_post_meta', isset( $_POST['jst_hide_post_meta'] ) ? '1' : '' );
+	update_post_meta( $post_id, '_jst_hide_global_nav', isset( $_POST['jst_hide_global_nav'] ) ? '1' : '' );
 	update_post_meta( $post_id, '_jst_disable_theme_style', isset( $_POST['jst_disable_theme_style'] ) ? '1' : '' );
 }
 add_action( 'save_post', 'jst_save_page_settings_meta_box' );
@@ -612,12 +628,28 @@ add_action( 'add_meta_boxes_jst_part', 'jst_add_part_meta_box' );
 function jst_render_part_meta_box( $post ) {
 	wp_nonce_field( 'jst_save_part', 'jst_part_nonce' );
 
-	$part_name = get_post_meta( $post->ID, '_jst_part_name', true );
-	$part_html = get_post_meta( $post->ID, '_jst_part_html', true );
+	$part_name    = get_post_meta( $post->ID, '_jst_part_name', true );
+	$part_html    = get_post_meta( $post->ID, '_jst_part_html', true );
+	$part_location = get_post_meta( $post->ID, '_jst_part_location', true ) ?: 'shortcode_only';
+	$part_show_on  = get_post_meta( $post->ID, '_jst_part_show_on', true ) ?: 'all';
+	$part_pages    = get_post_meta( $post->ID, '_jst_part_pages', true ) ?: array();
+	if ( ! is_array( $part_pages ) ) {
+		$part_pages = array();
+	}
 
 	$shortcode_preview = $part_name
 		? '[jst_part name="' . esc_attr( $part_name ) . '"]'
 		: __( '(set a Part Name below to generate the shortcode)', 'just-spectacular-theme' );
+
+	// Fetch all pages/posts for the page selector.
+	$all_pages = get_posts( array(
+		'post_type'      => get_post_types( array( 'public' => true ) ),
+		'posts_per_page' => -1,
+		'post_status'    => 'publish',
+		'orderby'        => 'title',
+		'order'          => 'ASC',
+		'exclude'        => array( $post->ID ),
+	) );
 	?>
 	<p>
 		<label for="jst_part_name"><strong><?php esc_html_e( 'Part Name', 'just-spectacular-theme' ); ?></strong></label><br>
@@ -646,6 +678,70 @@ function jst_render_part_meta_box( $post ) {
 			<?php esc_html_e( 'Paste the full HTML for this reusable section. Output raw on the front end — no sanitization. Admin-trusted.', 'just-spectacular-theme' ); ?>
 		</span>
 	</p>
+
+	<hr style="margin:1.5rem 0;">
+
+	<p>
+		<label for="jst_part_location"><strong><?php esc_html_e( 'Location', 'just-spectacular-theme' ); ?></strong></label><br>
+		<select id="jst_part_location" name="jst_part_location" style="min-width:240px;">
+			<option value="shortcode_only" <?php selected( $part_location, 'shortcode_only' ); ?>><?php esc_html_e( 'Shortcode only', 'just-spectacular-theme' ); ?></option>
+			<option value="after_body" <?php selected( $part_location, 'after_body' ); ?>><?php esc_html_e( 'After <body> (before global nav)', 'just-spectacular-theme' ); ?></option>
+			<option value="before_body_end" <?php selected( $part_location, 'before_body_end' ); ?>><?php esc_html_e( 'Before </body> (before footer)', 'just-spectacular-theme' ); ?></option>
+		</select>
+		<br>
+		<span class="description">
+			<?php esc_html_e( 'Auto-output this part at a fixed location on the page — no shortcode needed. "Shortcode only" disables auto-output.', 'just-spectacular-theme' ); ?>
+		</span>
+	</p>
+
+	<p id="jst_show_on_wrap">
+		<label><strong><?php esc_html_e( 'Show on', 'just-spectacular-theme' ); ?></strong></label><br>
+		<label style="margin-right:1rem;">
+			<input type="radio" name="jst_part_show_on" value="all" <?php checked( $part_show_on, 'all' ); ?>>
+			<?php esc_html_e( 'All pages', 'just-spectacular-theme' ); ?>
+		</label>
+		<label>
+			<input type="radio" name="jst_part_show_on" value="specific" <?php checked( $part_show_on, 'specific' ); ?>>
+			<?php esc_html_e( 'Specific pages', 'just-spectacular-theme' ); ?>
+		</label>
+		<br>
+		<span class="description">
+			<?php esc_html_e( 'Only applies when a Location is set above.', 'just-spectacular-theme' ); ?>
+		</span>
+	</p>
+
+	<div id="jst_part_pages_wrap" style="<?php echo 'specific' === $part_show_on ? '' : 'display:none;'; ?>margin-left:1rem;max-height:200px;overflow-y:auto;border:1px solid #dcdcde;padding:8px;border-radius:3px;background:#fff;">
+		<?php foreach ( $all_pages as $p ) : ?>
+			<label style="display:block;padding:2px 0;">
+				<input type="checkbox" name="jst_part_pages[]" value="<?php echo esc_attr( $p->ID ); ?>" <?php checked( in_array( (string) $p->ID, array_map( 'strval', $part_pages ), true ) ); ?>>
+				<?php echo esc_html( $p->post_title ); ?>
+				<span style="color:#999;font-size:11px;">(<?php echo esc_html( $p->post_type ); ?>)</span>
+			</label>
+		<?php endforeach; ?>
+	</div>
+
+	<script>
+	( function() {
+		var locationEl = document.getElementById( 'jst_part_location' );
+		var showOnWrap = document.getElementById( 'jst_show_on_wrap' );
+		var pagesWrap  = document.getElementById( 'jst_part_pages_wrap' );
+		var radios     = document.querySelectorAll( 'input[name="jst_part_show_on"]' );
+
+		function toggleShowOn() {
+			var isAuto = locationEl.value !== 'shortcode_only';
+			showOnWrap.style.display = isAuto ? '' : 'none';
+			pagesWrap.style.display  = ( isAuto && document.querySelector( 'input[name="jst_part_show_on"]:checked' ).value === 'specific' ) ? '' : 'none';
+		}
+
+		function togglePages() {
+			pagesWrap.style.display = this.value === 'specific' && locationEl.value !== 'shortcode_only' ? '' : 'none';
+		}
+
+		locationEl.addEventListener( 'change', toggleShowOn );
+		radios.forEach( function( r ) { r.addEventListener( 'change', togglePages ); } );
+		toggleShowOn();
+	} )();
+	</script>
 	<?php
 }
 
@@ -670,6 +766,18 @@ function jst_save_part_meta_box( $post_id ) {
 		// Admin-only trust context: raw HTML paste, intentionally not sanitized.
 		update_post_meta( $post_id, '_jst_part_html', wp_unslash( $_POST['jst_part_html'] ) );
 	}
+
+	$allowed_locations = array( 'shortcode_only', 'after_body', 'before_body_end' );
+	$location = isset( $_POST['jst_part_location'] ) ? sanitize_text_field( wp_unslash( $_POST['jst_part_location'] ) ) : 'shortcode_only';
+	update_post_meta( $post_id, '_jst_part_location', in_array( $location, $allowed_locations, true ) ? $location : 'shortcode_only' );
+
+	$show_on = isset( $_POST['jst_part_show_on'] ) && 'specific' === $_POST['jst_part_show_on'] ? 'specific' : 'all';
+	update_post_meta( $post_id, '_jst_part_show_on', $show_on );
+
+	$pages = isset( $_POST['jst_part_pages'] ) && is_array( $_POST['jst_part_pages'] )
+		? array_map( 'absint', $_POST['jst_part_pages'] )
+		: array();
+	update_post_meta( $post_id, '_jst_part_pages', $pages );
 }
 add_action( 'save_post_jst_part', 'jst_save_part_meta_box' );
 
@@ -741,6 +849,55 @@ function jst_part_shortcode( $atts ) {
 	return $html; // phpcs:ignore -- intentional raw output, admin-trusted.
 }
 add_shortcode( 'jst_part', 'jst_part_shortcode' );
+
+/**
+ * Fetch all published jst_part posts set to a given location,
+ * filtered by show_on setting, and output their HTML.
+ */
+function jst_output_parts_at_location( $location ) {
+	$parts = get_posts( array(
+		'post_type'      => 'jst_part',
+		'posts_per_page' => -1,
+		'post_status'    => 'publish',
+		'meta_query'     => array(
+			array(
+				'key'   => '_jst_part_location',
+				'value' => $location,
+			),
+		),
+		'no_found_rows'  => true,
+	) );
+
+	if ( empty( $parts ) ) {
+		return;
+	}
+
+	$current_id = is_singular() ? get_the_ID() : 0;
+
+	foreach ( $parts as $part ) {
+		$show_on = get_post_meta( $part->ID, '_jst_part_show_on', true ) ?: 'all';
+
+		if ( 'specific' === $show_on ) {
+			$pages = get_post_meta( $part->ID, '_jst_part_pages', true );
+			if ( ! is_array( $pages ) || ! in_array( $current_id, array_map( 'intval', $pages ), true ) ) {
+				continue;
+			}
+		}
+
+		$html = get_post_meta( $part->ID, '_jst_part_html', true );
+		echo $html; // phpcs:ignore -- intentional raw output, admin-trusted.
+	}
+}
+
+function jst_output_parts_after_body() {
+	jst_output_parts_at_location( 'after_body' );
+}
+add_action( 'wp_body_open', 'jst_output_parts_after_body', 10 );
+
+function jst_output_parts_before_body_end() {
+	jst_output_parts_at_location( 'before_body_end' );
+}
+add_action( 'jst_before_closing_body', 'jst_output_parts_before_body_end', 5 );
 
 /**
  * Inline JS for Copy buttons: list screen shortcode copy + edit screen shortcode copy.
