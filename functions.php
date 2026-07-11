@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.7.2' );
+define( 'JST_VERSION', '1.7.4' );
 
 
 /**
@@ -1119,29 +1119,49 @@ function jst_winden_scan_button_assets( $hook ) {
 		return;
 	}
 
+	// Fixed-position floating button — deliberately not anchored to a
+	// specific editor-toolbar selector, since those DOM hooks differ
+	// between the classic editor and the block editor (and shift across
+	// WP core versions). This stays visible in both.
 	wp_add_inline_script(
-		'jquery-core',
-		'jQuery(function($){
-			var btn = $(\'<button type="button" class="button" id="jst-winden-scan-btn" style="margin-left:8px;">Scan this page (Winden)</button>\');
-			$("#publishing-action").after(btn);
-			btn.on("click", function(e){
-				e.preventDefault();
-				btn.prop("disabled", true).text("Scanning…");
-				$.post(ajaxurl, {
-					action: "winden_trigger_recompile",
-					post_id: ' . absint( $post->ID ) . ',
-					_nonce: "' . esc_js( wp_create_nonce( 'winden_nonce' ) ) . '"
-				}).done(function(){
-					btn.text("Scanned ✓");
-				}).fail(function(){
-					btn.text("Scan failed");
-				}).always(function(){
-					setTimeout(function(){
-						btn.prop("disabled", false).text("Scan this page (Winden)");
-					}, 2000);
+		'wp-a11y',
+		'(function(){
+			function init(){
+				var btn = document.createElement("button");
+				btn.type = "button";
+				btn.id = "jst-winden-scan-btn";
+				btn.textContent = "Scan this page (Winden)";
+				btn.style.cssText = "position:fixed;bottom:24px;right:24px;z-index:99999;padding:10px 16px;background:#2271b1;color:#fff;border:none;border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,.25);cursor:pointer;font-size:13px;";
+
+				btn.addEventListener("click", function(){
+					btn.disabled = true;
+					btn.textContent = "Scanning…";
+					var xhr = new XMLHttpRequest();
+					xhr.open("POST", ajaxurl, true);
+					xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+					xhr.onload = function(){
+						btn.textContent = xhr.status === 200 ? "Scanned ✓" : "Scan failed";
+					};
+					xhr.onerror = function(){
+						btn.textContent = "Scan failed";
+					};
+					xhr.onloadend = function(){
+						setTimeout(function(){
+							btn.disabled = false;
+							btn.textContent = "Scan this page (Winden)";
+						}, 2000);
+					};
+					xhr.send("action=winden_trigger_recompile&post_id=' . absint( $post->ID ) . '&_nonce=' . esc_js( wp_create_nonce( 'winden_nonce' ) ) . '");
 				});
-			});
-		});'
+
+				document.body.appendChild(btn);
+			}
+			if (document.readyState === "loading") {
+				document.addEventListener("DOMContentLoaded", init);
+			} else {
+				init();
+			}
+		})();'
 	);
 }
 add_action( 'admin_enqueue_scripts', 'jst_winden_scan_button_assets' );
