@@ -1004,3 +1004,144 @@ function jst_make_templates_global( $templates, $theme, $post, $post_type ) {
 	return array_merge( $templates, $page_templates );
 }
 add_filter( 'theme_templates', 'jst_make_templates_global', 10, 4 );
+
+/**
+ * ------------------------------------------------------------------
+ * Winden integration: register a custom crawler so Winden's Tailwind
+ * class scanner sees HTML stored in wp_options (Theme Options fields)
+ * and postmeta (Page Code, Template Parts) — sources it does not scan
+ * natively. Uses Winden's official `winden_register_crawlers` filter
+ * (App/Caching/Crawlers/HookCrawler.php), so no "dummy post" bait is
+ * needed.
+ * ------------------------------------------------------------------
+ */
+
+class JST_Winden_Crawler {
+
+	/**
+	 * Extract class="..." / className="..." tokens from a blob of raw HTML.
+	 * Mirrors the minimum Winden's own StringParser needs: a flat list of
+	 * individual class-name strings.
+	 */
+	private function extract_classes_from_html( $html ) {
+		if ( ! $html || ! is_string( $html ) ) {
+			return array();
+		}
+
+		$classes = array();
+
+		if ( preg_match_all( '/\bclass(?:Name)?\s*=\s*["\']([^"\']*)["\']/i', $html, $matches ) ) {
+			foreach ( $matches[1] as $class_attr ) {
+				foreach ( preg_split( '/\s+/', trim( $class_attr ) ) as $class ) {
+					if ( '' !== $class ) {
+						$classes[] = $class;
+					}
+				}
+			}
+		}
+
+		return $classes;
+	}
+
+	/**
+	 * Required by Winden's HookCrawler contract: return a flat array of
+	 * Tailwind class strings found across all JST-managed HTML sources.
+	 */
+	public function classes() {
+		$classes = array();
+
+		// Theme Options fields stored in wp_options.
+		foreach ( array_keys( jst_theme_options_fields() ) as $field_id ) {
+			$classes = array_merge( $classes, $this->extract_classes_from_html( get_option( $field_id, '' ) ) );
+		}
+
+		// Per-page Header/Footer Code, stored in postmeta on any post/page.
+		$paged_posts = get_posts( array(
+			'post_type'      => 'any',
+			'post_status'    => 'any',
+			'posts_per_page' => -1,
+			'fields'         => 'ids',
+			'no_found_rows'  => true,
+			'meta_query'     => array(
+				'relation' => 'OR',
+				array( 'key' => '_jst_page_header_code', 'compare' => 'EXISTS' ),
+				array( 'key' => '_jst_page_footer_code', 'compare' => 'EXISTS' ),
+			),
+		) );
+
+		foreach ( $paged_posts as $post_id ) {
+			$classes = array_merge(
+				$classes,
+				$this->extract_classes_from_html( get_post_meta( $post_id, '_jst_page_header_code', true ) ),
+				$this->extract_classes_from_html( get_post_meta( $post_id, '_jst_page_footer_code', true ) )
+			);
+		}
+
+		// Template Parts HTML, stored in postmeta on jst_part posts.
+		$parts = get_posts( array(
+			'post_type'      => 'jst_part',
+			'post_status'    => 'any',
+			'posts_per_page' => -1,
+			'fields'         => 'ids',
+			'no_found_rows'  => true,
+		) );
+
+		foreach ( $parts as $part_id ) {
+			$classes = array_merge( $classes, $this->extract_classes_from_html( get_post_meta( $part_id, '_jst_part_html', true ) ) );
+		}
+
+		return array_values( array_unique( $classes ) );
+	}
+}
+
+function jst_register_winden_crawler( $crawlers ) {
+	$crawlers[] = new JST_Winden_Crawler();
+	return $crawlers;
+}
+add_filter( 'winden_register_crawlers', 'jst_register_winden_crawler' );
+
+/**
+ * ------------------------------------------------------------------
+ * Winden integration: "Scan this page" — calls Winden's existing
+ * wp_ajax_winden_trigger_recompile action for the current post,
+ * forcing an immediate incremental crawl + recompile flag instead of
+ * waiting for the async save_post cron trigger.
+ * ------------------------------------------------------------------
+ */
+
+function jst_winden_scan_button_assets( $hook ) {
+	if ( 'post.php' !== $hook && 'post-new.php' !== $hook ) {
+		return;
+	}
+
+	global $post;
+	if ( ! $post ) {
+		return;
+	}
+
+	wp_add_inline_script(
+		'jquery-core',
+		'jQuery(function($){
+			var btn = $(\'<button type="button" class="button" id="jst-winden-scan-btn" style="margin-left:8px;">Scan this page (Winden)</button>\');
+			$("#publishing-action").after(btn);
+			btn.on("click", function(e){
+				e.preventDefault();
+				btn.prop("disabled", true).text("Scanning…");
+				$.post(ajaxurl, {
+					action: "winden_trigger_recompile",
+					post_id: ' . absint( $post->ID ) . ',
+					_nonce: "' . esc_js( wp_create_nonce( 'winden_nonce' ) ) . '"
+				}).done(function(){
+					btn.text("Scanned ✓");
+				}).fail(function(){
+					btn.text("Scan failed");
+				}).always(function(){
+					setTimeout(function(){
+						btn.prop("disabled", false).text("Scan this page (Winden)");
+					}, 2000);
+				});
+			});
+		});'
+	);
+}
+add_action( 'admin_enqueue_scripts', 'jst_winden_scan_button_assets' );
