@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.7.1' );
+define( 'JST_VERSION', '1.7.2' );
 
 
 /**
@@ -878,7 +878,7 @@ function jst_part_shortcode( $atts ) {
 	}
 
 	$html = get_post_meta( $parts[0]->ID, '_jst_part_html', true );
-	return $html; // phpcs:ignore -- intentional raw output, admin-trusted.
+	return do_shortcode( $html ); // phpcs:ignore -- intentional raw output, admin-trusted.
 }
 add_shortcode( 'jst_part', 'jst_part_shortcode' );
 
@@ -917,7 +917,7 @@ function jst_output_parts_at_location( $location ) {
 		}
 
 		$html = get_post_meta( $part->ID, '_jst_part_html', true );
-		echo $html; // phpcs:ignore -- intentional raw output, admin-trusted.
+		echo do_shortcode( $html ); // phpcs:ignore -- intentional raw output, admin-trusted.
 	}
 }
 
