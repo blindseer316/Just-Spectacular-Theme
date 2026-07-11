@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.8.0' );
+define( 'JST_VERSION', '1.8.1' );
 
 
 /**
@@ -355,71 +355,78 @@ function jst_render_page_options_meta_box( $post ) {
 		font-size: 10px;
 		font-weight: 700;
 		line-height: 1;
-		cursor: default;
+		cursor: pointer;
 		vertical-align: middle;
 		margin-left: 4px;
-		position: relative;
+		flex-shrink: 0;
 	}
-	.jst-tip:hover::after {
-		content: attr(data-tip);
-		position: absolute;
-		left: 50%;
-		top: calc(100% + 6px);
-		transform: translateX(-50%);
-		background: #1d2327;
-		color: #fff;
+	.jst-tip-text {
+		display: none;
 		font-size: 11px;
-		font-weight: 400;
+		color: #646970;
 		line-height: 1.4;
-		padding: 6px 8px;
-		border-radius: 4px;
-		white-space: normal;
-		width: 180px;
-		z-index: 9999;
-		pointer-events: none;
+		margin-top: 4px;
+	}
+	.jst-tip-text.is-open {
+		display: block;
 	}
 	</style>
 	<p>
 		<label for="jst_page_width"><strong><?php esc_html_e( 'Width', 'just-spectacular-theme' ); ?></strong>
-			<span class="jst-tip" data-tip="<?php esc_attr_e( 'Max content width. Accepts any CSS value (e.g. 80rem, 1200px, 100%). Defaults to 80rem (100% on Full Width) if blank.', 'just-spectacular-theme' ); ?>">?</span>
+			<span class="jst-tip" data-target="jst-tip-width">?</span>
 		</label><br>
 		<input type="text" id="jst_page_width" name="jst_page_width" value="<?php echo esc_attr( $width ); ?>" placeholder="80rem" style="width:100%;" />
+		<span id="jst-tip-width" class="jst-tip-text"><?php esc_html_e( 'Max content width. Accepts any CSS value (e.g. 80rem, 1200px, 100%). Defaults to 80rem (100% on Full Width) if blank.', 'just-spectacular-theme' ); ?></span>
 	</p>
 	<p>
 		<label>
 			<input type="checkbox" name="jst_prose_invert" value="1" <?php checked( $prose_invert, '1' ); ?> />
 			<?php esc_html_e( 'Prose invert', 'just-spectacular-theme' ); ?>
-			<span class="jst-tip" data-tip="<?php esc_attr_e( 'Flips prose text/heading/link colors to light for dark background pages.', 'just-spectacular-theme' ); ?>">?</span>
+			<span class="jst-tip" data-target="jst-tip-prose">?</span>
 		</label>
+		<span id="jst-tip-prose" class="jst-tip-text"><?php esc_html_e( 'Flips prose text/heading/link colors to light for dark background pages.', 'just-spectacular-theme' ); ?></span>
 	</p>
 	<p>
 		<label>
 			<input type="checkbox" name="jst_hide_post_meta" value="1" <?php checked( $hide_post_meta, '1' ); ?> />
 			<?php esc_html_e( 'Hide post meta', 'just-spectacular-theme' ); ?>
-			<span class="jst-tip" data-tip="<?php esc_attr_e( 'Hides the date/author line on the Full Width — With Title template.', 'just-spectacular-theme' ); ?>">?</span>
+			<span class="jst-tip" data-target="jst-tip-meta">?</span>
 		</label>
+		<span id="jst-tip-meta" class="jst-tip-text"><?php esc_html_e( 'Hides the date/author line on the Full Width — With Title template.', 'just-spectacular-theme' ); ?></span>
 	</p>
 	<p>
 		<label>
 			<input type="checkbox" name="jst_hide_global_nav" value="1" <?php checked( $hide_global_nav, '1' ); ?> />
 			<?php esc_html_e( 'Hide global nav', 'just-spectacular-theme' ); ?>
-			<span class="jst-tip" data-tip="<?php esc_attr_e( 'Suppresses the global Header Nav / Menu (Theme Options) on this page.', 'just-spectacular-theme' ); ?>">?</span>
+			<span class="jst-tip" data-target="jst-tip-nav">?</span>
 		</label>
+		<span id="jst-tip-nav" class="jst-tip-text"><?php esc_html_e( 'Suppresses the global Header Nav / Menu (Theme Options) on this page.', 'just-spectacular-theme' ); ?></span>
 	</p>
 	<p>
 		<label>
 			<input type="checkbox" name="jst_hide_global_footer" value="1" <?php checked( $hide_global_footer, '1' ); ?> />
 			<?php esc_html_e( 'Hide global footer', 'just-spectacular-theme' ); ?>
-			<span class="jst-tip" data-tip="<?php esc_attr_e( 'Suppresses the global Footer HTML and Footer Scripts (Theme Options) on this page.', 'just-spectacular-theme' ); ?>">?</span>
+			<span class="jst-tip" data-target="jst-tip-footer">?</span>
 		</label>
+		<span id="jst-tip-footer" class="jst-tip-text"><?php esc_html_e( 'Suppresses the global Footer HTML and Footer Scripts (Theme Options) on this page.', 'just-spectacular-theme' ); ?></span>
 	</p>
 	<p>
 		<label>
 			<input type="checkbox" name="jst_disable_theme_style" value="1" <?php checked( $disable_style, '1' ); ?> />
 			<?php esc_html_e( 'Disable theme style.css', 'just-spectacular-theme' ); ?>
-			<span class="jst-tip" data-tip="<?php esc_attr_e( 'Removes the theme stylesheet on this page — for fully custom-built pages.', 'just-spectacular-theme' ); ?>">?</span>
+			<span class="jst-tip" data-target="jst-tip-style">?</span>
 		</label>
+		<span id="jst-tip-style" class="jst-tip-text"><?php esc_html_e( 'Removes the theme stylesheet on this page — for fully custom-built pages.', 'just-spectacular-theme' ); ?></span>
 	</p>
+	<script>
+	document.querySelectorAll( '.jst-tip[data-target]' ).forEach( function( btn ) {
+		btn.addEventListener( 'click', function( e ) {
+			e.preventDefault();
+			var tip = document.getElementById( btn.dataset.target );
+			if ( tip ) { tip.classList.toggle( 'is-open' ); }
+		} );
+	} );
+	</script>
 	<?php
 }
 
