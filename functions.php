@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.7.4' );
+define( 'JST_VERSION', '1.7.5' );
 
 
 /**
@@ -1103,9 +1103,26 @@ add_filter( 'winden_register_crawlers', 'jst_register_winden_crawler' );
 /**
  * ------------------------------------------------------------------
  * Winden integration: "Scan this page" — calls Winden's existing
- * wp_ajax_winden_trigger_recompile action for the current post,
- * forcing an immediate incremental crawl + recompile flag instead of
- * waiting for the async save_post cron trigger.
+ * wp_ajax_winden_trigger_recompile action.
+ *
+ * IMPORTANT: post_id must be 0 here, not the current post's ID.
+ * Winden's ajax_trigger_recompile() takes a "fast path" single-post
+ * crawl (ClassCrawler::crawlSinglePost()) whenever a post_id > 0 is
+ * supplied — and that path does NOT run HookCrawler, so it never
+ * picks up our custom crawler (Theme Options / Page Code / Template
+ * Parts). Passing 0 forces Winden's full ClassCrawler::classes()
+ * pipeline, which does include HookCrawler.
+ *
+ * Also note: this only updates Winden's stored crawled-class list
+ * (`winden_crawled_classes`) and sets a needs-recompile flag — it does
+ * NOT compile CSS itself. Actual compilation happens client-side, via
+ * Winden's own compiler JS, which only loads on the front end when Dev
+ * Mode is on (see Winden's App/Assets/Providers/Frontend.php). So after
+ * this button runs, load/refresh a front-end page with Dev Mode enabled
+ * to see the new classes compiled in. If Dev Mode is off (static
+ * production CSS), use Winden's own admin "Compile" action to rebuild
+ * output.css — this button can't substitute for that without
+ * duplicating Winden's browser compiler.
  * ------------------------------------------------------------------
  */
 
@@ -1130,28 +1147,34 @@ function jst_winden_scan_button_assets( $hook ) {
 				var btn = document.createElement("button");
 				btn.type = "button";
 				btn.id = "jst-winden-scan-btn";
-				btn.textContent = "Scan this page (Winden)";
+				btn.textContent = "Rescan Winden sources";
+				btn.title = "Full crawl (incl. Theme Options / Page Code / Template Parts). Reload the front end with Dev Mode on afterward to see new classes compiled.";
 				btn.style.cssText = "position:fixed;bottom:24px;right:24px;z-index:99999;padding:10px 16px;background:#2271b1;color:#fff;border:none;border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,.25);cursor:pointer;font-size:13px;";
 
 				btn.addEventListener("click", function(){
 					btn.disabled = true;
-					btn.textContent = "Scanning…";
+					btn.textContent = "Crawling…";
 					var xhr = new XMLHttpRequest();
 					xhr.open("POST", ajaxurl, true);
 					xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
 					xhr.onload = function(){
-						btn.textContent = xhr.status === 200 ? "Scanned ✓" : "Scan failed";
+						var ok = false;
+						try { ok = xhr.status === 200 && JSON.parse(xhr.responseText).success; } catch (e) {}
+						btn.textContent = ok ? "Crawled ✓ (reload front end)" : "Crawl failed";
+						if (!ok) { console.error("[JST/Winden] rescan failed:", xhr.status, xhr.responseText); }
 					};
 					xhr.onerror = function(){
-						btn.textContent = "Scan failed";
+						btn.textContent = "Crawl failed";
 					};
 					xhr.onloadend = function(){
 						setTimeout(function(){
 							btn.disabled = false;
-							btn.textContent = "Scan this page (Winden)";
-						}, 2000);
+							btn.textContent = "Rescan Winden sources";
+						}, 3000);
 					};
-					xhr.send("action=winden_trigger_recompile&post_id=' . absint( $post->ID ) . '&_nonce=' . esc_js( wp_create_nonce( 'winden_nonce' ) ) . '");
+					// post_id=0 forces a full crawl (see doc block above) —
+					// intentionally NOT the current post ID.
+					xhr.send("action=winden_trigger_recompile&post_id=0&_nonce=' . esc_js( wp_create_nonce( 'winden_nonce' ) ) . '");
 				});
 
 				document.body.appendChild(btn);
