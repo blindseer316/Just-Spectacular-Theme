@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.7.5' );
+define( 'JST_VERSION', '1.7.6' );
 
 
 /**
@@ -1102,89 +1102,197 @@ add_filter( 'winden_register_crawlers', 'jst_register_winden_crawler' );
 
 /**
  * ------------------------------------------------------------------
- * Winden integration: "Scan this page" — calls Winden's existing
- * wp_ajax_winden_trigger_recompile action.
+ * Winden integration: "Compile Tailwind CSS" admin bar button.
  *
- * IMPORTANT: post_id must be 0 here, not the current post's ID.
- * Winden's ajax_trigger_recompile() takes a "fast path" single-post
- * crawl (ClassCrawler::crawlSinglePost()) whenever a post_id > 0 is
- * supplied — and that path does NOT run HookCrawler, so it never
- * picks up our custom crawler (Theme Options / Page Code / Template
- * Parts). Passing 0 forces Winden's full ClassCrawler::classes()
- * pipeline, which does include HookCrawler.
+ * Winden only ever writes output.css from two places: (a) Dev Mode's
+ * client-side live compiler on the front end, which never persists to
+ * disk, or (b) Winden's own dashboard "Save" button, whose screen
+ * always loads Winden's full compiler JS regardless of the sitewide
+ * Dev Mode setting. There is no "compile on save, no FOUC" path built
+ * into Winden itself — with Dev Mode off, nothing auto-compiles
+ * anywhere on the site, JST content or otherwise.
  *
- * Also note: this only updates Winden's stored crawled-class list
- * (`winden_crawled_classes`) and sets a needs-recompile flag — it does
- * NOT compile CSS itself. Actual compilation happens client-side, via
- * Winden's own compiler JS, which only loads on the front end when Dev
- * Mode is on (see Winden's App/Assets/Providers/Frontend.php). So after
- * this button runs, load/refresh a front-end page with Dev Mode enabled
- * to see the new classes compiled in. If Dev Mode is off (static
- * production CSS), use Winden's own admin "Compile" action to rebuild
- * output.css — this button can't substitute for that without
- * duplicating Winden's browser compiler.
+ * This replicates (b): admin-wide (every wp-admin screen, not just
+ * JST's own), we enqueue Winden's real compiler assets — the same
+ * ones its own dashboard loads — via Winden's own
+ * ProvidersHelpers::framework_scripts(), then add one "Compile
+ * Tailwind CSS" node to the admin toolbar. Clicking it:
+ *   1. Forces a full crawl (post_id=0 — required so Winden's
+ *      HookCrawler runs and our custom crawler's classes, see
+ *      JST_Winden_Crawler above, get included; passing the current
+ *      post's ID would take Winden's fast single-post path instead,
+ *      which skips HookCrawler entirely).
+ *   2. Runs Winden's own compile() (via window.WindenCompilerCore),
+ *      which compiles client-side using Winden's already-loaded
+ *      compiler and POSTs the result to Winden's own save-cache
+ *      endpoint, writing output.css — identical to what happens when
+ *      you click "Save" in Winden's dashboard.
+ * No custom CSS compiler logic here; this only orchestrates Winden's
+ * own pipeline from a place Winden itself doesn't reach.
  * ------------------------------------------------------------------
  */
 
-function jst_winden_scan_button_assets( $hook ) {
-	if ( 'post.php' !== $hook && 'post-new.php' !== $hook ) {
+/**
+ * Enqueue Winden's real compiler assets on every wp-admin screen
+ * (never on the front end — no FOUC/visitor impact) so the toolbar
+ * button below can call Winden's own compiler on demand.
+ */
+function jst_enqueue_winden_compiler_assets() {
+	if ( ! is_admin() || ! current_user_can( 'edit_posts' ) ) {
 		return;
 	}
 
-	global $post;
-	if ( ! $post ) {
+	if ( ! class_exists( '\Winden\App\Assets\Providers\ProvidersHelpers' ) ) {
 		return;
 	}
 
-	// Fixed-position floating button — deliberately not anchored to a
-	// specific editor-toolbar selector, since those DOM hooks differ
-	// between the classic editor and the block editor (and shift across
-	// WP core versions). This stays visible in both.
+	// Same call Winden's own dashboard/editor screens use — enqueues
+	// the compiler engine (build/compiler/tailwindcss-compiler.js,
+	// handle "winden-compiler-module") plus its config globals.
+	\Winden\App\Assets\Providers\ProvidersHelpers::framework_scripts();
+
+	wp_enqueue_script(
+		'winden-compiler-core',
+		WINDTACS_PLUGIN_URL . 'assets/winden-compiler-core.js',
+		array( 'winden-compiler-module' ),
+		defined( 'WINDTACS_VERSION' ) ? WINDTACS_VERSION : false,
+		true
+	);
+
+	// winden-compiler-core.js only needs { ajaxUrl, nonce } on this
+	// global — compile-trigger.js normally supplies it via
+	// wp_localize_script, but we're calling the core module directly.
 	wp_add_inline_script(
-		'wp-a11y',
-		'(function(){
-			function init(){
-				var btn = document.createElement("button");
-				btn.type = "button";
-				btn.id = "jst-winden-scan-btn";
-				btn.textContent = "Rescan Winden sources";
-				btn.title = "Full crawl (incl. Theme Options / Page Code / Template Parts). Reload the front end with Dev Mode on afterward to see new classes compiled.";
-				btn.style.cssText = "position:fixed;bottom:24px;right:24px;z-index:99999;padding:10px 16px;background:#2271b1;color:#fff;border:none;border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,.25);cursor:pointer;font-size:13px;";
-
-				btn.addEventListener("click", function(){
-					btn.disabled = true;
-					btn.textContent = "Crawling…";
-					var xhr = new XMLHttpRequest();
-					xhr.open("POST", ajaxurl, true);
-					xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
-					xhr.onload = function(){
-						var ok = false;
-						try { ok = xhr.status === 200 && JSON.parse(xhr.responseText).success; } catch (e) {}
-						btn.textContent = ok ? "Crawled ✓ (reload front end)" : "Crawl failed";
-						if (!ok) { console.error("[JST/Winden] rescan failed:", xhr.status, xhr.responseText); }
-					};
-					xhr.onerror = function(){
-						btn.textContent = "Crawl failed";
-					};
-					xhr.onloadend = function(){
-						setTimeout(function(){
-							btn.disabled = false;
-							btn.textContent = "Rescan Winden sources";
-						}, 3000);
-					};
-					// post_id=0 forces a full crawl (see doc block above) —
-					// intentionally NOT the current post ID.
-					xhr.send("action=winden_trigger_recompile&post_id=0&_nonce=' . esc_js( wp_create_nonce( 'winden_nonce' ) ) . '");
-				});
-
-				document.body.appendChild(btn);
-			}
-			if (document.readyState === "loading") {
-				document.addEventListener("DOMContentLoaded", init);
-			} else {
-				init();
-			}
-		})();'
+		'winden-compiler-core',
+		'window.windenAutoCompile = window.windenAutoCompile || {};'
+		. 'window.windenAutoCompile.ajaxUrl = ' . wp_json_encode( admin_url( 'admin-ajax.php' ) ) . ';'
+		. 'window.windenAutoCompile.nonce = ' . wp_json_encode( wp_create_nonce( 'winden_nonce' ) ) . ';',
+		'before'
 	);
 }
-add_action( 'admin_enqueue_scripts', 'jst_winden_scan_button_assets' );
+add_action( 'admin_enqueue_scripts', 'jst_enqueue_winden_compiler_assets' );
+
+/**
+ * Add the "Compile Tailwind CSS" node to the admin toolbar.
+ */
+function jst_add_winden_compile_admin_bar_node( $wp_admin_bar ) {
+	if ( ! is_admin() || ! current_user_can( 'edit_posts' ) ) {
+		return;
+	}
+
+	if ( ! class_exists( '\Winden\App\Assets\Providers\ProvidersHelpers' ) ) {
+		return;
+	}
+
+	$wp_admin_bar->add_node(
+		array(
+			'id'    => 'jst-winden-compile',
+			'title' => 'Compile Tailwind CSS',
+			'href'  => '#',
+			'meta'  => array( 'title' => 'Full crawl + compile via Winden — writes output.css immediately, no Dev Mode needed.' ),
+		)
+	);
+}
+add_action( 'admin_bar_menu', 'jst_add_winden_compile_admin_bar_node', 100 );
+
+/**
+ * Click handler for the admin bar node: full crawl, then Winden's own
+ * compile-and-save.
+ */
+function jst_winden_compile_button_script() {
+	if ( ! is_admin() || ! current_user_can( 'edit_posts' ) ) {
+		return;
+	}
+
+	if ( ! class_exists( '\Winden\App\Assets\Providers\ProvidersHelpers' ) ) {
+		return;
+	}
+	?>
+	<script>
+	( function() {
+		function init() {
+			var link = document.querySelector( '#wp-admin-bar-jst-winden-compile > .ab-item' );
+			if ( ! link ) {
+				return;
+			}
+
+			var originalText = link.textContent;
+
+			function setLabel( text ) {
+				link.textContent = text;
+			}
+
+			link.addEventListener( 'click', function( e ) {
+				e.preventDefault();
+				if ( link.dataset.busy ) {
+					return;
+				}
+				link.dataset.busy = '1';
+				setLabel( 'Crawling…' );
+
+				fetch( window.windenAutoCompile.ajaxUrl, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+					body: new URLSearchParams( {
+						action: 'winden_trigger_recompile',
+						post_id: '0', // Full crawl — required for HookCrawler (our custom sources) to run.
+						_nonce: window.windenAutoCompile.nonce
+					} )
+				} )
+					.then( function( res ) { return res.json(); } )
+					.then( function( crawlResult ) {
+						if ( ! crawlResult || ! crawlResult.success ) {
+							throw new Error( 'Crawl failed' );
+						}
+						setLabel( 'Compiling…' );
+
+						function waitForCore( tries ) {
+							if ( window.WindenCompilerCore && window.tailwindify ) {
+								return Promise.resolve();
+							}
+							if ( tries <= 0 ) {
+								throw new Error( 'Winden compiler did not load' );
+							}
+							return new Promise( function( resolve ) {
+								setTimeout( resolve, 100 );
+							} ).then( function() {
+								return waitForCore( tries - 1 );
+							} );
+						}
+
+						return waitForCore( 50 ).then( function() {
+							var compile = window.WindenCompilerCore.createCompileFunction( {
+								onCSSReload: function() {
+									// No-op: this is an admin-only trigger, nothing on this
+									// screen needs the compiled CSS injected live.
+								}
+							} );
+							return compile();
+						} );
+					} )
+					.then( function() {
+						setLabel( 'Compiled ✓' );
+					} )
+					.catch( function( err ) {
+						console.error( '[JST/Winden] Compile failed:', err );
+						setLabel( 'Compile failed' );
+					} )
+					.finally( function() {
+						setTimeout( function() {
+							delete link.dataset.busy;
+							setLabel( originalText );
+						}, 3000 );
+					} );
+			} );
+		}
+
+		if ( document.readyState === 'loading' ) {
+			document.addEventListener( 'DOMContentLoaded', init );
+		} else {
+			init();
+		}
+	} )();
+	</script>
+	<?php
+}
+add_action( 'admin_footer', 'jst_winden_compile_button_script' );
