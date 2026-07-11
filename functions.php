@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.7.7' );
+define( 'JST_VERSION', '1.7.8' );
 
 
 /**
@@ -158,10 +158,34 @@ function jst_render_theme_options_page() {
 	$disable_prose = get_option( 'jst_disable_tailwind_prose', '' );
 	$prose_invert  = get_option( 'jst_prose_invert', '' );
 	?>
+	<style>
+	#jst-sticky-save {
+		position: sticky;
+		top: 32px; /* below WP admin bar */
+		z-index: 100;
+		background: #fff;
+		border-bottom: 1px solid #dcdcde;
+		padding: 10px 0;
+		margin-bottom: 1rem;
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+	}
+	#jst-sticky-save .jst-save-label {
+		font-weight: 600;
+		color: #1d2327;
+	}
+	</style>
 	<div class="wrap">
 		<h1><?php esc_html_e( 'Theme Options', 'just-spectacular-theme' ); ?></h1>
 		<form method="post" action="">
 			<?php wp_nonce_field( 'jst_save_theme_options', 'jst_theme_options_nonce' ); ?>
+
+			<div id="jst-sticky-save">
+				<span class="jst-save-label"><?php esc_html_e( 'JST Theme Options', 'just-spectacular-theme' ); ?></span>
+				<?php submit_button( __( 'Save Options', 'just-spectacular-theme' ), 'primary', 'submit', false ); ?>
+			</div>
+
 			<?php foreach ( $fields as $field_id => $field ) : ?>
 				<h2><?php echo esc_html( $field['label'] ); ?></h2>
 				<p>
@@ -317,63 +341,83 @@ function jst_render_page_options_meta_box( $post ) {
 	$hide_global_nav    = get_post_meta( $post->ID, '_jst_hide_global_nav', true );
 	$hide_global_footer = get_post_meta( $post->ID, '_jst_hide_global_footer', true );
 	?>
+	<style>
+	.jst-tip {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 15px;
+		height: 15px;
+		border-radius: 50%;
+		background: #c3c4c7;
+		color: #fff;
+		font-size: 10px;
+		font-weight: 700;
+		line-height: 1;
+		cursor: default;
+		vertical-align: middle;
+		margin-left: 4px;
+		position: relative;
+	}
+	.jst-tip:hover::after {
+		content: attr(data-tip);
+		position: absolute;
+		left: 20px;
+		top: 50%;
+		transform: translateY(-50%);
+		background: #1d2327;
+		color: #fff;
+		font-size: 11px;
+		font-weight: 400;
+		line-height: 1.4;
+		padding: 6px 8px;
+		border-radius: 4px;
+		white-space: normal;
+		width: 200px;
+		z-index: 9999;
+		pointer-events: none;
+	}
+	</style>
 	<p>
-		<label for="jst_page_width"><strong><?php esc_html_e( 'Width', 'just-spectacular-theme' ); ?></strong></label><br>
+		<label for="jst_page_width"><strong><?php esc_html_e( 'Width', 'just-spectacular-theme' ); ?></strong>
+			<span class="jst-tip" data-tip="<?php esc_attr_e( 'Max content width. Accepts any CSS value (e.g. 80rem, 1200px, 100%). Defaults to 80rem (100% on Full Width) if blank.', 'just-spectacular-theme' ); ?>">?</span>
+		</label><br>
 		<input type="text" id="jst_page_width" name="jst_page_width" value="<?php echo esc_attr( $width ); ?>" placeholder="80rem" style="width:100%;" />
-		<br>
-		<span class="description">
-			<?php esc_html_e( 'Max content width. Accepts any CSS value (e.g. 80rem, 1200px, 100%). Defaults to 80rem (100% on Full Width) if blank.', 'just-spectacular-theme' ); ?>
-		</span>
 	</p>
 	<p>
 		<label>
 			<input type="checkbox" name="jst_prose_invert" value="1" <?php checked( $prose_invert, '1' ); ?> />
-			<?php esc_html_e( 'Prose invert (dark background)', 'just-spectacular-theme' ); ?>
+			<?php esc_html_e( 'Prose invert', 'just-spectacular-theme' ); ?>
+			<span class="jst-tip" data-tip="<?php esc_attr_e( 'Flips prose text/heading/link colors to light for dark background pages.', 'just-spectacular-theme' ); ?>">?</span>
 		</label>
-		<br>
-		<span class="description">
-			<?php esc_html_e( 'Flips prose text/heading/link colors to light for dark backgrounds.', 'just-spectacular-theme' ); ?>
-		</span>
 	</p>
 	<p>
 		<label>
 			<input type="checkbox" name="jst_hide_post_meta" value="1" <?php checked( $hide_post_meta, '1' ); ?> />
 			<?php esc_html_e( 'Hide post meta', 'just-spectacular-theme' ); ?>
+			<span class="jst-tip" data-tip="<?php esc_attr_e( 'Hides the date/author line on the Full Width — With Title template.', 'just-spectacular-theme' ); ?>">?</span>
 		</label>
-		<br>
-		<span class="description">
-			<?php esc_html_e( 'Hides the date/author line on the Full Width — With Title template.', 'just-spectacular-theme' ); ?>
-		</span>
 	</p>
 	<p>
 		<label>
 			<input type="checkbox" name="jst_hide_global_nav" value="1" <?php checked( $hide_global_nav, '1' ); ?> />
 			<?php esc_html_e( 'Hide global nav', 'just-spectacular-theme' ); ?>
+			<span class="jst-tip" data-tip="<?php esc_attr_e( 'Suppresses the global Header Nav / Menu (Theme Options) on this page.', 'just-spectacular-theme' ); ?>">?</span>
 		</label>
-		<br>
-		<span class="description">
-			<?php esc_html_e( 'Suppresses the global Header Nav / Menu (Theme Options) on this page.', 'just-spectacular-theme' ); ?>
-		</span>
 	</p>
 	<p>
 		<label>
 			<input type="checkbox" name="jst_hide_global_footer" value="1" <?php checked( $hide_global_footer, '1' ); ?> />
 			<?php esc_html_e( 'Hide global footer', 'just-spectacular-theme' ); ?>
+			<span class="jst-tip" data-tip="<?php esc_attr_e( 'Suppresses the global Footer HTML and Footer Scripts (Theme Options) on this page.', 'just-spectacular-theme' ); ?>">?</span>
 		</label>
-		<br>
-		<span class="description">
-			<?php esc_html_e( 'Suppresses the global Footer HTML and Footer Scripts (Theme Options) on this page.', 'just-spectacular-theme' ); ?>
-		</span>
 	</p>
 	<p>
 		<label>
 			<input type="checkbox" name="jst_disable_theme_style" value="1" <?php checked( $disable_style, '1' ); ?> />
 			<?php esc_html_e( 'Disable theme style.css', 'just-spectacular-theme' ); ?>
+			<span class="jst-tip" data-tip="<?php esc_attr_e( 'Removes the theme stylesheet on this page — for fully custom-built pages.', 'just-spectacular-theme' ); ?>">?</span>
 		</label>
-		<br>
-		<span class="description">
-			<?php esc_html_e( 'Removes the theme stylesheet on this page — for fully custom-built pages.', 'just-spectacular-theme' ); ?>
-		</span>
 	</p>
 	<?php
 }
