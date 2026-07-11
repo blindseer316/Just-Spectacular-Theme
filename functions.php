@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.7.6' );
+define( 'JST_VERSION', '1.7.7' );
 
 
 /**
@@ -1133,12 +1133,22 @@ add_filter( 'winden_register_crawlers', 'jst_register_winden_crawler' );
  */
 
 /**
- * Enqueue Winden's real compiler assets on every wp-admin screen
- * (never on the front end — no FOUC/visitor impact) so the toolbar
- * button below can call Winden's own compiler on demand.
+ * Enqueue Winden's real compiler assets wherever the admin toolbar is
+ * visible — both wp-admin and the front end for logged-in users with
+ * the toolbar enabled. Never loads for anonymous visitors.
+ *
+ * IMPORTANT: this deliberately does NOT call Winden's own
+ * ProvidersHelpers::framework_scripts() — that bundles in
+ * tailwindcss-watcher.js, a live MutationObserver-based DOM
+ * scanner/compiler that actively injects compiled CSS (including
+ * Tailwind's Preflight reset) into whatever page it's running on.
+ * Loading that admin-wide broke native wp-admin control styling
+ * (e.g. other plugins' toggle switches) and caused a FOUC on every
+ * admin screen. We only need the inert compiler engine + config
+ * globals — replicated here manually, minus the watcher.
  */
 function jst_enqueue_winden_compiler_assets() {
-	if ( ! is_admin() || ! current_user_can( 'edit_posts' ) ) {
+	if ( ! current_user_can( 'edit_posts' ) || ! is_admin_bar_showing() ) {
 		return;
 	}
 
@@ -1146,15 +1156,26 @@ function jst_enqueue_winden_compiler_assets() {
 		return;
 	}
 
-	// Same call Winden's own dashboard/editor screens use — enqueues
-	// the compiler engine (build/compiler/tailwindcss-compiler.js,
-	// handle "winden-compiler-module") plus its config globals.
-	\Winden\App\Assets\Providers\ProvidersHelpers::framework_scripts();
+	$compiler_handle = 'winden-compiler-module';
+	if ( ! wp_script_is( $compiler_handle, 'enqueued' ) ) {
+		wp_enqueue_script(
+			$compiler_handle,
+			WINDTACS_PLUGIN_URL . 'build/compiler/tailwindcss-compiler.js',
+			array(),
+			defined( 'WINDTACS_VERSION' ) ? WINDTACS_VERSION : false,
+			true
+		);
+	}
+
+	$compiler_options = \Winden\App\Assets\Providers\ProvidersHelpers::get_compiler_options();
+	wp_register_script( 'tailwind-compiler-options', '', array( $compiler_handle ), defined( 'WINDTACS_VERSION' ) ? WINDTACS_VERSION : false, true );
+	wp_enqueue_script( 'tailwind-compiler-options' );
+	wp_add_inline_script( 'tailwind-compiler-options', 'window.tailwind_compiler_options = ' . wp_json_encode( $compiler_options ) );
 
 	wp_enqueue_script(
 		'winden-compiler-core',
 		WINDTACS_PLUGIN_URL . 'assets/winden-compiler-core.js',
-		array( 'winden-compiler-module' ),
+		array( $compiler_handle ),
 		defined( 'WINDTACS_VERSION' ) ? WINDTACS_VERSION : false,
 		true
 	);
@@ -1171,12 +1192,14 @@ function jst_enqueue_winden_compiler_assets() {
 	);
 }
 add_action( 'admin_enqueue_scripts', 'jst_enqueue_winden_compiler_assets' );
+add_action( 'wp_enqueue_scripts', 'jst_enqueue_winden_compiler_assets' );
 
 /**
- * Add the "Compile Tailwind CSS" node to the admin toolbar.
+ * Add the "Compile Tailwind CSS" node to the admin toolbar — shown
+ * wherever the toolbar itself is shown (admin + front end).
  */
 function jst_add_winden_compile_admin_bar_node( $wp_admin_bar ) {
-	if ( ! is_admin() || ! current_user_can( 'edit_posts' ) ) {
+	if ( ! current_user_can( 'edit_posts' ) ) {
 		return;
 	}
 
@@ -1197,10 +1220,11 @@ add_action( 'admin_bar_menu', 'jst_add_winden_compile_admin_bar_node', 100 );
 
 /**
  * Click handler for the admin bar node: full crawl, then Winden's own
- * compile-and-save.
+ * compile-and-save. Output on both admin and front-end footers since
+ * the node itself can appear in either.
  */
 function jst_winden_compile_button_script() {
-	if ( ! is_admin() || ! current_user_can( 'edit_posts' ) ) {
+	if ( ! current_user_can( 'edit_posts' ) || ! is_admin_bar_showing() ) {
 		return;
 	}
 
@@ -1296,3 +1320,4 @@ function jst_winden_compile_button_script() {
 	<?php
 }
 add_action( 'admin_footer', 'jst_winden_compile_button_script' );
+add_action( 'wp_footer', 'jst_winden_compile_button_script' );
