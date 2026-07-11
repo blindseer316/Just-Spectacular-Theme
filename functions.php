@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.7.2' );
+define( 'JST_VERSION', '1.7.3' );
 
 
 /**
@@ -140,6 +140,9 @@ function jst_render_theme_options_page() {
 		return;
 	}
 
+	/** Fires at the top of the Theme Options page, before rendering — used by the manual scan sink sync button. */
+	do_action( 'jst_theme_options_page_top' );
+
 	if ( isset( $_POST['jst_theme_options_nonce'] ) && wp_verify_nonce( wp_unslash( $_POST['jst_theme_options_nonce'] ), 'jst_save_theme_options' ) ) {
 		foreach ( array_keys( jst_theme_options_fields() ) as $field ) {
 			if ( isset( $_POST[ $field ] ) ) {
@@ -151,6 +154,7 @@ function jst_render_theme_options_page() {
 		}
 		update_option( 'jst_disable_tailwind_prose', isset( $_POST['jst_disable_tailwind_prose'] ) ? '1' : '' );
 		update_option( 'jst_prose_invert', isset( $_POST['jst_prose_invert'] ) ? '1' : '' );
+		do_action( 'jst_scan_sink_theme_options_saved' );
 		echo '<div class="updated"><p>' . esc_html__( 'Theme options saved.', 'just-spectacular-theme' ) . '</p></div>';
 	}
 
@@ -198,6 +202,17 @@ function jst_render_theme_options_page() {
 			</p>
 
 			<?php submit_button( __( 'Save Options', 'just-spectacular-theme' ) ); ?>
+		</form>
+
+		<hr style="margin:1.5rem 0;">
+		<h2><?php esc_html_e( 'Tailwind Scan Sink', 'just-spectacular-theme' ); ?></h2>
+		<p class="description">
+			<?php esc_html_e( 'Winden/WindPress only scan post content for Tailwind classes — they never see Theme Options, Template Parts, or Page Code. This mirrors all of that HTML into a hidden post so the scanner finds it. Runs automatically on every save; use this button to force a sync without re-saving anything.', 'just-spectacular-theme' ); ?>
+		</p>
+		<form method="post" action="">
+			<?php wp_nonce_field( 'jst_sync_scan_sink', 'jst_scan_sink_nonce' ); ?>
+			<input type="hidden" name="jst_manual_sync_scan_sink" value="1" />
+			<?php submit_button( __( 'Sync Scan Sink', 'just-spectacular-theme' ), 'secondary' ); ?>
 		</form>
 	</div>
 	<?php
@@ -1004,3 +1019,157 @@ function jst_make_templates_global( $templates, $theme, $post, $post_type ) {
 	return array_merge( $templates, $page_templates );
 }
 add_filter( 'theme_templates', 'jst_make_templates_global', 10, 4 );
+
+/**
+ * ------------------------------------------------------------------
+ * Tailwind Scan Sink
+ * ------------------------------------------------------------------
+ *
+ * Winden/WindPress scan post_content for Tailwind classes to compile.
+ * Theme Options (wp_options) and Template Parts / Page Code (postmeta)
+ * are invisible to that scanner. This mirrors all of that HTML into
+ * the post_content of one hidden, non-public post so the scanner picks
+ * up every class in use, sitewide, after any relevant save.
+ * ------------------------------------------------------------------
+ */
+
+/**
+ * Hidden post type used solely as a scan target. Never publicly
+ * queryable, no rewrite, no admin UI — just a row in wp_posts.
+ */
+function jst_register_scan_sink_cpt() {
+	register_post_type(
+		'jst_scan_sink',
+		array(
+			'labels'              => array( 'name' => 'Tailwind Scan Sink' ),
+			'public'              => false,
+			'show_ui'             => false,
+			'show_in_menu'        => false,
+			'show_in_rest'        => false,
+			'supports'            => array( 'title', 'editor' ),
+			'capability_type'     => 'post',
+			'rewrite'             => false,
+			'query_var'           => false,
+			'publicly_queryable'  => false,
+			'exclude_from_search' => true,
+		)
+	);
+}
+add_action( 'init', 'jst_register_scan_sink_cpt' );
+
+/**
+ * Get (or lazily create) the single scan sink post, caching its ID
+ * in an option so we don't search for it on every sync.
+ */
+function jst_get_scan_sink_post_id() {
+	$post_id = get_option( 'jst_scan_sink_post_id', 0 );
+
+	if ( $post_id && 'jst_scan_sink' === get_post_type( $post_id ) ) {
+		return $post_id;
+	}
+
+	$post_id = wp_insert_post(
+		array(
+			'post_type'   => 'jst_scan_sink',
+			'post_status' => 'publish',
+			'post_title'  => 'Tailwind Scan Sink (do not delete)',
+			'post_content' => '',
+		),
+		true
+	);
+
+	if ( is_wp_error( $post_id ) ) {
+		return 0;
+	}
+
+	update_option( 'jst_scan_sink_post_id', $post_id );
+	return $post_id;
+}
+
+/**
+ * Gather every off-post-content HTML source in the theme and write
+ * the combined markup into the scan sink post's post_content.
+ */
+function jst_sync_scan_sink() {
+	$post_id = jst_get_scan_sink_post_id();
+	if ( ! $post_id ) {
+		return;
+	}
+
+	$chunks = array();
+
+	// Theme Options fields (wp_options).
+	foreach ( array_keys( jst_theme_options_fields() ) as $field ) {
+		$chunks[] = get_option( $field, '' );
+	}
+
+	// Template Parts HTML (postmeta on jst_part).
+	$parts = get_posts(
+		array(
+			'post_type'      => 'jst_part',
+			'posts_per_page' => -1,
+			'post_status'    => 'any',
+			'no_found_rows'  => true,
+			'fields'         => 'ids',
+		)
+	);
+	foreach ( $parts as $part_id ) {
+		$chunks[] = get_post_meta( $part_id, '_jst_part_html', true );
+	}
+
+	// Per-page header/footer code (postmeta on any post type).
+	$paged_posts = get_posts(
+		array(
+			'post_type'      => 'any',
+			'posts_per_page' => -1,
+			'post_status'    => 'any',
+			'no_found_rows'  => true,
+			'fields'         => 'ids',
+			'meta_query'     => array(
+				'relation' => 'OR',
+				array( 'key' => '_jst_page_header_code', 'compare' => 'EXISTS' ),
+				array( 'key' => '_jst_page_footer_code', 'compare' => 'EXISTS' ),
+			),
+		)
+	);
+	foreach ( $paged_posts as $page_id ) {
+		$chunks[] = get_post_meta( $page_id, '_jst_page_header_code', true );
+		$chunks[] = get_post_meta( $page_id, '_jst_page_footer_code', true );
+	}
+
+	$combined = implode( "\n\n", array_filter( $chunks ) );
+
+	wp_update_post(
+		array(
+			'ID'           => $post_id,
+			'post_content' => $combined, // phpcs:ignore -- intentional raw HTML mirror, admin-trusted sources only.
+		)
+	);
+}
+
+// Fire after Theme Options save.
+add_action( 'jst_scan_sink_theme_options_saved', 'jst_sync_scan_sink' );
+
+// Fire after Template Part save.
+add_action( 'save_post_jst_part', 'jst_sync_scan_sink', 20 );
+
+// Fire after any post save (covers _jst_page_header_code / _jst_page_footer_code).
+add_action( 'save_post', 'jst_sync_scan_sink', 20 );
+
+/**
+ * Manual "Sync Scan Sink" button on the Theme Options page.
+ */
+function jst_handle_manual_scan_sink_sync() {
+	if ( ! isset( $_POST['jst_manual_sync_scan_sink'] ) ) {
+		return;
+	}
+	if ( ! current_user_can( 'manage_options' ) ) {
+		return;
+	}
+	if ( ! isset( $_POST['jst_scan_sink_nonce'] ) || ! wp_verify_nonce( wp_unslash( $_POST['jst_scan_sink_nonce'] ), 'jst_sync_scan_sink' ) ) {
+		return;
+	}
+	jst_sync_scan_sink();
+	echo '<div class="updated"><p>' . esc_html__( 'Scan sink synced — Winden/WindPress should pick up the current classes on its next scan.', 'just-spectacular-theme' ) . '</p></div>';
+}
+add_action( 'jst_theme_options_page_top', 'jst_handle_manual_scan_sink_sync' );
