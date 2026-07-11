@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.7.9' );
+define( 'JST_VERSION', '1.8.0' );
 
 
 /**
@@ -165,7 +165,7 @@ function jst_render_theme_options_page() {
 		z-index: 100;
 		background: #fff;
 		border-bottom: 1px solid #dcdcde;
-		padding: 10px 0;
+		padding: 10px 0 10px 4px;
 		margin-bottom: 1rem;
 		display: flex;
 		align-items: center;
@@ -363,9 +363,9 @@ function jst_render_page_options_meta_box( $post ) {
 	.jst-tip:hover::after {
 		content: attr(data-tip);
 		position: absolute;
-		right: 20px;
-		top: 50%;
-		transform: translateY(-50%);
+		left: 50%;
+		top: calc(100% + 6px);
+		transform: translateX(-50%);
 		background: #1d2327;
 		color: #fff;
 		font-size: 11px;
@@ -374,7 +374,7 @@ function jst_render_page_options_meta_box( $post ) {
 		padding: 6px 8px;
 		border-radius: 4px;
 		white-space: normal;
-		width: 200px;
+		width: 180px;
 		z-index: 9999;
 		pointer-events: none;
 	}
