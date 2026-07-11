@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.7.3' );
+define( 'JST_VERSION', '1.7.4' );
 
 
 /**
@@ -1089,10 +1089,21 @@ function jst_get_scan_sink_post_id() {
 /**
  * Gather every off-post-content HTML source in the theme and write
  * the combined markup into the scan sink post's post_content.
+ *
+ * Re-entry guarded: wp_update_post() below fires save_post itself,
+ * which is hooked to this same function — without the guard that
+ * recurses forever and hangs every post save on the site.
  */
 function jst_sync_scan_sink() {
+	static $running = false;
+	if ( $running ) {
+		return;
+	}
+	$running = true;
+
 	$post_id = jst_get_scan_sink_post_id();
 	if ( ! $post_id ) {
+		$running = false;
 		return;
 	}
 
@@ -1145,6 +1156,8 @@ function jst_sync_scan_sink() {
 			'post_content' => $combined, // phpcs:ignore -- intentional raw HTML mirror, admin-trusted sources only.
 		)
 	);
+
+	$running = false;
 }
 
 // Fire after Theme Options save.
@@ -1153,8 +1166,22 @@ add_action( 'jst_scan_sink_theme_options_saved', 'jst_sync_scan_sink' );
 // Fire after Template Part save.
 add_action( 'save_post_jst_part', 'jst_sync_scan_sink', 20 );
 
-// Fire after any post save (covers _jst_page_header_code / _jst_page_footer_code).
-add_action( 'save_post', 'jst_sync_scan_sink', 20 );
+/**
+ * Fire after any other post save (covers _jst_page_header_code /
+ * _jst_page_footer_code) — but skip the scan sink's own post type
+ * (wp_update_post() inside jst_sync_scan_sink() triggers this same
+ * hook) and autosaves/revisions, which don't need a resync.
+ */
+function jst_maybe_sync_scan_sink_on_save( $post_id, $post ) {
+	if ( 'jst_scan_sink' === $post->post_type ) {
+		return;
+	}
+	if ( wp_is_post_autosave( $post_id ) || wp_is_post_revision( $post_id ) ) {
+		return;
+	}
+	jst_sync_scan_sink();
+}
+add_action( 'save_post', 'jst_maybe_sync_scan_sink_on_save', 20, 2 );
 
 /**
  * Manual "Sync Scan Sink" button on the Theme Options page.
