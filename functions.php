@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.7.8' );
+define( 'JST_VERSION', '1.7.9' );
 
 
 /**
@@ -174,6 +174,7 @@ function jst_render_theme_options_page() {
 	#jst-sticky-save .jst-save-label {
 		font-weight: 600;
 		color: #1d2327;
+		margin-right: 8px;
 	}
 	</style>
 	<div class="wrap">
@@ -362,7 +363,7 @@ function jst_render_page_options_meta_box( $post ) {
 	.jst-tip:hover::after {
 		content: attr(data-tip);
 		position: absolute;
-		left: 20px;
+		right: 20px;
 		top: 50%;
 		transform: translateY(-50%);
 		background: #1d2327;
