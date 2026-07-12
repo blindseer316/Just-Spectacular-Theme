@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.8.1' );
+define( 'JST_VERSION', '1.8.2' );
 
 
 /**
@@ -1039,6 +1039,173 @@ function jst_part_list_header() {
 	<?php
 }
 add_action( 'admin_notices', 'jst_part_list_header' );
+
+/**
+ * ------------------------------------------------------------------
+ * Template Parts: starter seeder + bulk edit page
+ * ------------------------------------------------------------------
+ */
+
+/**
+ * Seed empty named Template Parts on theme activation.
+ * Only creates a part if no jst_part with that _jst_part_name exists yet.
+ */
+function jst_seed_starter_parts() {
+	$starters = array( 'testimonials', 'services', 'locations', 'cta', 'trust-strip', 'faq' );
+
+	foreach ( $starters as $name ) {
+		$existing = get_posts( array(
+			'post_type'      => 'jst_part',
+			'posts_per_page' => 1,
+			'post_status'    => 'any',
+			'fields'         => 'ids',
+			'no_found_rows'  => true,
+			'meta_query'     => array( array( 'key' => '_jst_part_name', 'value' => $name ) ),
+		) );
+
+		if ( ! empty( $existing ) ) {
+			continue;
+		}
+
+		$post_id = wp_insert_post( array(
+			'post_type'   => 'jst_part',
+			'post_title'  => ucwords( str_replace( '-', ' ', $name ) ),
+			'post_status' => 'publish',
+		) );
+
+		if ( $post_id && ! is_wp_error( $post_id ) ) {
+			update_post_meta( $post_id, '_jst_part_name', $name );
+			update_post_meta( $post_id, '_jst_part_html', '' );
+			update_post_meta( $post_id, '_jst_part_location', 'shortcode_only' );
+			update_post_meta( $post_id, '_jst_part_show_on', 'all' );
+		}
+	}
+}
+add_action( 'after_switch_theme', 'jst_seed_starter_parts' );
+
+/**
+ * Register "Bulk Edit" submenu under Template Parts.
+ */
+function jst_register_parts_bulk_edit_page() {
+	add_submenu_page(
+		'edit.php?post_type=jst_part',
+		__( 'Bulk Edit Parts', 'just-spectacular-theme' ),
+		__( 'Bulk Edit', 'just-spectacular-theme' ),
+		'edit_posts',
+		'jst-parts-bulk-edit',
+		'jst_render_parts_bulk_edit_page'
+	);
+}
+add_action( 'admin_menu', 'jst_register_parts_bulk_edit_page' );
+
+function jst_render_parts_bulk_edit_page() {
+	if ( ! current_user_can( 'edit_posts' ) ) {
+		return;
+	}
+
+	// Handle save.
+	if ( isset( $_POST['jst_bulk_parts_nonce'] ) && wp_verify_nonce( wp_unslash( $_POST['jst_bulk_parts_nonce'] ), 'jst_save_bulk_parts' ) ) {
+		$submitted = isset( $_POST['jst_part_html'] ) && is_array( $_POST['jst_part_html'] ) ? $_POST['jst_part_html'] : array();
+		foreach ( $submitted as $post_id => $html ) {
+			$post_id = absint( $post_id );
+			if ( $post_id && current_user_can( 'edit_post', $post_id ) ) {
+				update_post_meta( $post_id, '_jst_part_html', wp_unslash( $html ) ); // phpcs:ignore -- admin-trusted raw HTML.
+				wp_update_post( array( 'ID' => $post_id, 'post_status' => 'publish' ) );
+			}
+		}
+		echo '<div class="updated"><p>' . esc_html__( 'Template Parts saved.', 'just-spectacular-theme' ) . '</p></div>';
+	}
+
+	$parts = get_posts( array(
+		'post_type'      => 'jst_part',
+		'post_status'    => array( 'publish', 'draft' ),
+		'posts_per_page' => -1,
+		'orderby'        => 'title',
+		'order'          => 'ASC',
+		'no_found_rows'  => true,
+	) );
+	?>
+	<style>
+	#jst-bulk-sticky {
+		position: sticky;
+		top: 32px;
+		z-index: 100;
+		background: #fff;
+		border-bottom: 1px solid #dcdcde;
+		padding: 10px 0 10px 4px;
+		margin-bottom: 1.5rem;
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+	}
+	#jst-bulk-sticky strong {
+		font-size: 13px;
+		color: #1d2327;
+		margin-right: 8px;
+	}
+	.jst-bulk-part {
+		background: #fff;
+		border: 1px solid #dcdcde;
+		border-radius: 4px;
+		margin-bottom: 1.5rem;
+		padding: 16px;
+	}
+	.jst-bulk-part h3 {
+		margin: 0 0 4px;
+		font-size: 14px;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.jst-bulk-part code {
+		font-size: 11px;
+		background: #f0f0f1;
+		padding: 2px 6px;
+		border-radius: 3px;
+		font-weight: 400;
+	}
+	.jst-bulk-part textarea {
+		width: 100%;
+		font-family: monospace;
+		font-size: 12px;
+		margin-top: 8px;
+		resize: vertical;
+	}
+	</style>
+	<div class="wrap">
+		<h1><?php esc_html_e( 'Bulk Edit — Template Parts', 'just-spectacular-theme' ); ?></h1>
+		<form method="post" action="">
+			<?php wp_nonce_field( 'jst_save_bulk_parts', 'jst_bulk_parts_nonce' ); ?>
+			<div id="jst-bulk-sticky">
+				<strong><?php esc_html_e( 'JST Template Parts', 'just-spectacular-theme' ); ?></strong>
+				<?php submit_button( __( 'Save All Parts', 'just-spectacular-theme' ), 'primary', 'submit', false ); ?>
+			</div>
+			<?php if ( empty( $parts ) ) : ?>
+				<p><?php esc_html_e( 'No Template Parts found. Add one first.', 'just-spectacular-theme' ); ?></p>
+			<?php else : ?>
+				<?php foreach ( $parts as $part ) :
+					$name      = get_post_meta( $part->ID, '_jst_part_name', true );
+					$html      = get_post_meta( $part->ID, '_jst_part_html', true );
+					$shortcode = $name ? '[jst_part name="' . esc_attr( $name ) . '"]' : '';
+				?>
+				<div class="jst-bulk-part">
+					<h3>
+						<?php echo esc_html( $part->post_title ); ?>
+						<?php if ( $shortcode ) : ?>
+							<code><?php echo esc_html( $shortcode ); ?></code>
+							<button type="button" class="button jst-copy-btn" data-copy="<?php echo esc_attr( $shortcode ); ?>"><?php esc_html_e( 'Copy', 'just-spectacular-theme' ); ?></button>
+						<?php endif; ?>
+						<a href="<?php echo esc_url( get_edit_post_link( $part->ID ) ); ?>" style="font-size:11px;font-weight:400;margin-left:auto;"><?php esc_html_e( 'Edit settings →', 'just-spectacular-theme' ); ?></a>
+					</h3>
+					<textarea name="jst_part_html[<?php echo esc_attr( $part->ID ); ?>]" rows="12" class="jst-metabox-field"><?php echo $html; // phpcs:ignore -- intentionally unescaped raw HTML. ?></textarea>
+				</div>
+				<?php endforeach; ?>
+			<?php endif; ?>
+			<?php submit_button( __( 'Save All Parts', 'just-spectacular-theme' ) ); ?>
+		</form>
+	</div>
+	<?php
+}
 
 /**
  * ------------------------------------------------------------------
