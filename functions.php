@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.8.2' );
+define( 'JST_VERSION', '1.8.3' );
 
 
 /**
@@ -1103,8 +1103,10 @@ function jst_render_parts_bulk_edit_page() {
 		return;
 	}
 
-	// Handle save.
+	// Handle save — existing parts + new parts created via import.
 	if ( isset( $_POST['jst_bulk_parts_nonce'] ) && wp_verify_nonce( wp_unslash( $_POST['jst_bulk_parts_nonce'] ), 'jst_save_bulk_parts' ) ) {
+
+		// Update existing parts.
 		$submitted = isset( $_POST['jst_part_html'] ) && is_array( $_POST['jst_part_html'] ) ? $_POST['jst_part_html'] : array();
 		foreach ( $submitted as $post_id => $html ) {
 			$post_id = absint( $post_id );
@@ -1113,6 +1115,27 @@ function jst_render_parts_bulk_edit_page() {
 				wp_update_post( array( 'ID' => $post_id, 'post_status' => 'publish' ) );
 			}
 		}
+
+		// Create new parts from import (section IDs that had no matching part).
+		$new_parts = isset( $_POST['jst_new_part'] ) && is_array( $_POST['jst_new_part'] ) ? $_POST['jst_new_part'] : array();
+		foreach ( $new_parts as $part_name => $html ) {
+			$part_name = sanitize_title( wp_unslash( $part_name ) );
+			if ( ! $part_name || ! $html ) {
+				continue;
+			}
+			$post_id = wp_insert_post( array(
+				'post_type'   => 'jst_part',
+				'post_title'  => ucwords( str_replace( '-', ' ', $part_name ) ),
+				'post_status' => 'publish',
+			) );
+			if ( $post_id && ! is_wp_error( $post_id ) ) {
+				update_post_meta( $post_id, '_jst_part_name', $part_name );
+				update_post_meta( $post_id, '_jst_part_html', wp_unslash( $html ) ); // phpcs:ignore -- admin-trusted raw HTML.
+				update_post_meta( $post_id, '_jst_part_location', 'shortcode_only' );
+				update_post_meta( $post_id, '_jst_part_show_on', 'all' );
+			}
+		}
+
 		echo '<div class="updated"><p>' . esc_html__( 'Template Parts saved.', 'just-spectacular-theme' ) . '</p></div>';
 	}
 
@@ -1124,6 +1147,15 @@ function jst_render_parts_bulk_edit_page() {
 		'order'          => 'ASC',
 		'no_found_rows'  => true,
 	) );
+
+	// Build a name→id map for JS to use during import matching.
+	$part_name_map = array();
+	foreach ( $parts as $part ) {
+		$n = get_post_meta( $part->ID, '_jst_part_name', true );
+		if ( $n ) {
+			$part_name_map[ $n ] = $part->ID;
+		}
+	}
 	?>
 	<style>
 	#jst-bulk-sticky {
@@ -1137,12 +1169,50 @@ function jst_render_parts_bulk_edit_page() {
 		display: flex;
 		align-items: center;
 		gap: 1rem;
+		flex-wrap: wrap;
 	}
-	#jst-bulk-sticky strong {
+	#jst-bulk-sticky strong { font-size: 13px; color: #1d2327; margin-right: 8px; }
+	#jst-import-toggle { margin-left: auto; }
+
+	/* Import panel */
+	#jst-import-panel {
+		display: none;
+		background: #f6f7f7;
+		border: 1px solid #dcdcde;
+		border-radius: 4px;
+		padding: 16px;
+		margin-bottom: 1.5rem;
+	}
+	#jst-import-panel.is-open { display: block; }
+	#jst-import-panel h3 { margin: 0 0 10px; font-size: 13px; }
+	#jst-import-html { width: 100%; font-family: monospace; font-size: 12px; resize: vertical; }
+	#jst-scan-results { margin-top: 14px; }
+	.jst-scan-item {
+		background: #fff;
+		border: 1px solid #dcdcde;
+		border-radius: 3px;
+		padding: 10px 12px;
+		margin-bottom: 6px;
+		display: flex;
+		align-items: center;
+		gap: 10px;
 		font-size: 13px;
-		color: #1d2327;
-		margin-right: 8px;
 	}
+	.jst-scan-item code { font-size: 11px; background: #f0f0f1; padding: 2px 5px; border-radius: 3px; }
+	.jst-scan-item .jst-scan-badge {
+		font-size: 10px;
+		font-weight: 700;
+		padding: 2px 6px;
+		border-radius: 3px;
+		text-transform: uppercase;
+		margin-left: auto;
+	}
+	.jst-scan-badge.new { background: #d1e7dd; color: #0a3622; }
+	.jst-scan-badge.overwrite { background: #fff3cd; color: #664d03; }
+	.jst-scan-badge.empty { background: #e2e3e5; color: #41464b; }
+	#jst-import-actions { margin-top: 12px; display: flex; gap: 8px; align-items: center; }
+
+	/* Parts list */
 	.jst-bulk-part {
 		background: #fff;
 		border: 1px solid #dcdcde;
@@ -1150,45 +1220,49 @@ function jst_render_parts_bulk_edit_page() {
 		margin-bottom: 1.5rem;
 		padding: 16px;
 	}
-	.jst-bulk-part h3 {
-		margin: 0 0 4px;
-		font-size: 14px;
-		display: flex;
-		align-items: center;
-		gap: 8px;
-	}
-	.jst-bulk-part code {
-		font-size: 11px;
-		background: #f0f0f1;
-		padding: 2px 6px;
-		border-radius: 3px;
-		font-weight: 400;
-	}
-	.jst-bulk-part textarea {
-		width: 100%;
-		font-family: monospace;
-		font-size: 12px;
-		margin-top: 8px;
-		resize: vertical;
-	}
+	.jst-bulk-part h3 { margin: 0 0 4px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+	.jst-bulk-part code { font-size: 11px; background: #f0f0f1; padding: 2px 6px; border-radius: 3px; font-weight: 400; }
+	.jst-bulk-part textarea { width: 100%; font-family: monospace; font-size: 12px; margin-top: 8px; resize: vertical; }
 	</style>
+
 	<div class="wrap">
 		<h1><?php esc_html_e( 'Bulk Edit — Template Parts', 'just-spectacular-theme' ); ?></h1>
-		<form method="post" action="">
+		<form method="post" action="" id="jst-bulk-form">
 			<?php wp_nonce_field( 'jst_save_bulk_parts', 'jst_bulk_parts_nonce' ); ?>
+
 			<div id="jst-bulk-sticky">
 				<strong><?php esc_html_e( 'JST Template Parts', 'just-spectacular-theme' ); ?></strong>
 				<?php submit_button( __( 'Save All Parts', 'just-spectacular-theme' ), 'primary', 'submit', false ); ?>
+				<button type="button" id="jst-import-toggle" class="button"><?php esc_html_e( '↑ Import Template', 'just-spectacular-theme' ); ?></button>
 			</div>
+
+			<!-- Import panel -->
+			<div id="jst-import-panel">
+				<h3><?php esc_html_e( 'Import from HTML Template', 'just-spectacular-theme' ); ?></h3>
+				<p style="margin:0 0 8px;color:#646970;font-size:12px;"><?php esc_html_e( 'Paste your full page HTML below. The scanner finds every <section id="…"> and matches it against your existing Template Parts by ID.', 'just-spectacular-theme' ); ?></p>
+				<textarea id="jst-import-html" rows="10" placeholder="Paste full HTML here…"></textarea>
+				<div style="margin-top:8px;display:flex;gap:8px;align-items:center;">
+					<button type="button" id="jst-scan-btn" class="button button-primary"><?php esc_html_e( 'Scan', 'just-spectacular-theme' ); ?></button>
+					<span id="jst-scan-status" style="font-size:12px;color:#646970;"></span>
+				</div>
+				<div id="jst-scan-results"></div>
+				<div id="jst-import-actions" style="display:none;">
+					<button type="button" id="jst-apply-btn" class="button button-primary"><?php esc_html_e( 'Apply Selected', 'just-spectacular-theme' ); ?></button>
+					<label style="font-size:12px;"><input type="checkbox" id="jst-check-all" checked> <?php esc_html_e( 'Select all', 'just-spectacular-theme' ); ?></label>
+					<span id="jst-apply-status" style="font-size:12px;color:#646970;"></span>
+				</div>
+			</div>
+
+			<!-- Parts list -->
 			<?php if ( empty( $parts ) ) : ?>
-				<p><?php esc_html_e( 'No Template Parts found. Add one first.', 'just-spectacular-theme' ); ?></p>
+				<p><?php esc_html_e( 'No Template Parts found. Use Import to create them from a template, or add one manually.', 'just-spectacular-theme' ); ?></p>
 			<?php else : ?>
 				<?php foreach ( $parts as $part ) :
 					$name      = get_post_meta( $part->ID, '_jst_part_name', true );
 					$html      = get_post_meta( $part->ID, '_jst_part_html', true );
 					$shortcode = $name ? '[jst_part name="' . esc_attr( $name ) . '"]' : '';
 				?>
-				<div class="jst-bulk-part">
+				<div class="jst-bulk-part" data-part-name="<?php echo esc_attr( $name ); ?>">
 					<h3>
 						<?php echo esc_html( $part->post_title ); ?>
 						<?php if ( $shortcode ) : ?>
@@ -1201,9 +1275,127 @@ function jst_render_parts_bulk_edit_page() {
 				</div>
 				<?php endforeach; ?>
 			<?php endif; ?>
+
 			<?php submit_button( __( 'Save All Parts', 'just-spectacular-theme' ) ); ?>
 		</form>
 	</div>
+
+	<script>
+	( function() {
+		// Part name → { id, hasContent } map from PHP.
+		var partMap = {};
+		document.querySelectorAll( '.jst-bulk-part[data-part-name]' ).forEach( function( el ) {
+			var name = el.dataset.partName;
+			var ta   = el.querySelector( 'textarea' );
+			if ( name && ta ) {
+				partMap[ name ] = { el: el, textarea: ta, hasContent: ta.value.trim().length > 0 };
+			}
+		} );
+
+		// Toggle import panel.
+		var toggleBtn = document.getElementById( 'jst-import-toggle' );
+		var panel     = document.getElementById( 'jst-import-panel' );
+		toggleBtn.addEventListener( 'click', function() {
+			var open = panel.classList.toggle( 'is-open' );
+			toggleBtn.textContent = open ? '✕ Close Import' : '↑ Import Template';
+		} );
+
+		// Scan.
+		document.getElementById( 'jst-scan-btn' ).addEventListener( 'click', function() {
+			var raw     = document.getElementById( 'jst-import-html' ).value.trim();
+			var status  = document.getElementById( 'jst-scan-status' );
+			var results = document.getElementById( 'jst-scan-results' );
+			var actions = document.getElementById( 'jst-import-actions' );
+
+			results.innerHTML = '';
+			actions.style.display = 'none';
+
+			if ( ! raw ) {
+				status.textContent = 'Paste HTML first.';
+				return;
+			}
+
+			var parser  = new DOMParser();
+			var doc     = parser.parseFromString( raw, 'text/html' );
+			var sections = Array.from( doc.querySelectorAll( 'section[id]' ) );
+
+			if ( ! sections.length ) {
+				status.textContent = 'No <section id="…"> elements found.';
+				return;
+			}
+
+			status.textContent = sections.length + ' sections found.';
+
+			var items = [];
+			sections.forEach( function( sec ) {
+				var id   = sec.id;
+				var html = sec.outerHTML;
+				var match = partMap[ id ] || null;
+				var badge, badgeClass;
+
+				if ( match ) {
+					if ( match.hasContent ) {
+						badge = 'Will overwrite'; badgeClass = 'overwrite';
+					} else {
+						badge = 'Empty — fill'; badgeClass = 'empty';
+					}
+				} else {
+					badge = 'New part'; badgeClass = 'new';
+				}
+
+				items.push( { id: id, html: html, match: match, badge: badge, badgeClass: badgeClass } );
+
+				var row = document.createElement( 'div' );
+				row.className = 'jst-scan-item';
+				row.innerHTML =
+					'<input type="checkbox" class="jst-scan-check" data-idx="' + ( items.length - 1 ) + '" ' + ( badgeClass !== 'overwrite' ? 'checked' : '' ) + '>' +
+					'<code>' + id + '</code>' +
+					( match ? '' : '<span style="font-size:11px;color:#646970;">→ will create new part</span>' ) +
+					'<span class="jst-scan-badge ' + badgeClass + '">' + badge + '</span>';
+				results.appendChild( row );
+			} );
+
+			actions.style.display = 'flex';
+
+			// Select all toggle.
+			document.getElementById( 'jst-check-all' ).addEventListener( 'change', function() {
+				results.querySelectorAll( '.jst-scan-check' ).forEach( function( cb ) { cb.checked = this.checked; }.bind( this ) );
+			} );
+
+			// Apply.
+			document.getElementById( 'jst-apply-btn' ).onclick = function() {
+				var applyStatus = document.getElementById( 'jst-apply-status' );
+				var form        = document.getElementById( 'jst-bulk-form' );
+				var applied = 0;
+
+				results.querySelectorAll( '.jst-scan-check:checked' ).forEach( function( cb ) {
+					var item = items[ parseInt( cb.dataset.idx ) ];
+					if ( ! item ) { return; }
+
+					if ( item.match ) {
+						// Fill existing textarea.
+						item.match.textarea.value = item.html;
+					} else {
+						// New part — add hidden input so PHP creates it on save.
+						var existing = form.querySelector( 'input[name="jst_new_part[' + item.id + ']"]' );
+						if ( existing ) { existing.remove(); }
+						var hidden = document.createElement( 'input' );
+						hidden.type  = 'hidden';
+						hidden.name  = 'jst_new_part[' + item.id + ']';
+						hidden.value = item.html;
+						form.appendChild( hidden );
+					}
+					applied++;
+				} );
+
+				applyStatus.textContent = applied + ' part' + ( applied !== 1 ? 's' : '' ) + ' applied — hit Save All to commit.';
+				panel.classList.remove( 'is-open' );
+				toggleBtn.textContent = '↑ Import Template';
+				window.scrollTo( { top: 0, behavior: 'smooth' } );
+			};
+		} );
+	} )();
+	</script>
 	<?php
 }
 
