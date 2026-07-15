@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.8.3' );
+define( 'JST_VERSION', '1.8.4' );
 
 
 /**
@@ -1187,29 +1187,60 @@ function jst_render_parts_bulk_edit_page() {
 	#jst-import-panel h3 { margin: 0 0 10px; font-size: 13px; }
 	#jst-import-html { width: 100%; font-family: monospace; font-size: 12px; resize: vertical; }
 	#jst-scan-results { margin-top: 14px; }
-	.jst-scan-item {
+
+	/* Section row */
+	.jst-scan-section {
 		background: #fff;
 		border: 1px solid #dcdcde;
 		border-radius: 3px;
-		padding: 10px 12px;
-		margin-bottom: 6px;
+		margin-bottom: 8px;
+		font-size: 13px;
+		overflow: hidden;
+	}
+	.jst-scan-section-header {
 		display: flex;
 		align-items: center;
 		gap: 10px;
-		font-size: 13px;
+		padding: 10px 12px;
+		cursor: pointer;
+		user-select: none;
 	}
-	.jst-scan-item code { font-size: 11px; background: #f0f0f1; padding: 2px 5px; border-radius: 3px; }
-	.jst-scan-item .jst-scan-badge {
+	.jst-scan-section-header:hover { background: #f9f9f9; }
+	.jst-scan-section-header code { font-size: 11px; background: #f0f0f1; padding: 2px 5px; border-radius: 3px; }
+	.jst-scan-badge {
 		font-size: 10px;
 		font-weight: 700;
 		padding: 2px 6px;
 		border-radius: 3px;
 		text-transform: uppercase;
 		margin-left: auto;
+		flex-shrink: 0;
 	}
 	.jst-scan-badge.new { background: #d1e7dd; color: #0a3622; }
 	.jst-scan-badge.overwrite { background: #fff3cd; color: #664d03; }
 	.jst-scan-badge.empty { background: #e2e3e5; color: #41464b; }
+	.jst-scan-expand { font-size: 11px; color: #646970; flex-shrink: 0; }
+
+	/* Child element rows */
+	.jst-scan-children {
+		display: none;
+		border-top: 1px solid #f0f0f1;
+		padding: 6px 12px 10px 36px;
+		background: #fafafa;
+	}
+	.jst-scan-children.is-open { display: block; }
+	.jst-scan-child {
+		display: flex;
+		align-items: baseline;
+		gap: 8px;
+		padding: 4px 0;
+		font-size: 12px;
+		border-bottom: 1px solid #f0f0f1;
+	}
+	.jst-scan-child:last-child { border-bottom: none; }
+	.jst-scan-child code { font-size: 11px; background: #f0f0f1; padding: 1px 4px; border-radius: 3px; }
+	.jst-scan-child .jst-child-preview { color: #646970; font-size: 11px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 360px; }
+
 	#jst-import-actions { margin-top: 12px; display: flex; gap: 8px; align-items: center; }
 
 	/* Parts list */
@@ -1239,8 +1270,15 @@ function jst_render_parts_bulk_edit_page() {
 			<!-- Import panel -->
 			<div id="jst-import-panel">
 				<h3><?php esc_html_e( 'Import from HTML Template', 'just-spectacular-theme' ); ?></h3>
-				<p style="margin:0 0 8px;color:#646970;font-size:12px;"><?php esc_html_e( 'Paste your full page HTML below. The scanner finds every <section id="…"> and matches it against your existing Template Parts by ID.', 'just-spectacular-theme' ); ?></p>
-				<textarea id="jst-import-html" rows="10" placeholder="Paste full HTML here…"></textarea>
+				<p style="margin:0 0 10px;color:#646970;font-size:12px;"><?php esc_html_e( 'Upload an HTML file or paste below. The scanner finds every <section id="…">, then lets you pick individual child elements so you can import just the grid and skip the headline.', 'just-spectacular-theme' ); ?></p>
+				<div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;">
+					<label class="button" style="cursor:pointer;">
+						<?php esc_html_e( 'Upload HTML File', 'just-spectacular-theme' ); ?>
+						<input type="file" id="jst-import-file" accept=".html,text/html" style="display:none;">
+					</label>
+					<span style="font-size:12px;color:#646970;"><?php esc_html_e( '— or paste below —', 'just-spectacular-theme' ); ?></span>
+				</div>
+				<textarea id="jst-import-html" rows="6" placeholder="Paste full HTML here…"></textarea>
 				<div style="margin-top:8px;display:flex;gap:8px;align-items:center;">
 					<button type="button" id="jst-scan-btn" class="button button-primary"><?php esc_html_e( 'Scan', 'just-spectacular-theme' ); ?></button>
 					<span id="jst-scan-status" style="font-size:12px;color:#646970;"></span>
@@ -1282,13 +1320,13 @@ function jst_render_parts_bulk_edit_page() {
 
 	<script>
 	( function() {
-		// Part name → { id, hasContent } map from PHP.
+		// Part name → { textarea, hasContent } map built from the rendered cards.
 		var partMap = {};
 		document.querySelectorAll( '.jst-bulk-part[data-part-name]' ).forEach( function( el ) {
 			var name = el.dataset.partName;
 			var ta   = el.querySelector( 'textarea' );
 			if ( name && ta ) {
-				partMap[ name ] = { el: el, textarea: ta, hasContent: ta.value.trim().length > 0 };
+				partMap[ name ] = { textarea: ta, hasContent: ta.value.trim().length > 0 };
 			}
 		} );
 
@@ -1300,67 +1338,177 @@ function jst_render_parts_bulk_edit_page() {
 			toggleBtn.textContent = open ? '✕ Close Import' : '↑ Import Template';
 		} );
 
-		// Scan.
-		document.getElementById( 'jst-scan-btn' ).addEventListener( 'click', function() {
+		// File upload → populate textarea and auto-scan.
+		document.getElementById( 'jst-import-file' ).addEventListener( 'change', function( e ) {
+			var file = e.target.files[0];
+			if ( ! file ) { return; }
+			var reader = new FileReader();
+			reader.onload = function( ev ) {
+				document.getElementById( 'jst-import-html' ).value = ev.target.result;
+				runScan();
+			};
+			reader.readAsText( file );
+		} );
+
+		document.getElementById( 'jst-scan-btn' ).addEventListener( 'click', runScan );
+
+		// Returns a short label for a child element: tag + first id/class + text preview.
+		function childLabel( el ) {
+			var label = el.tagName.toLowerCase();
+			if ( el.id )        { label += '#' + el.id; }
+			else if ( el.className && typeof el.className === 'string' ) {
+				var cls = el.className.trim().split( /\s+/ )[0];
+				if ( cls ) { label += '.' + cls; }
+			}
+			return label;
+		}
+
+		function childPreview( el ) {
+			var t = el.textContent.replace( /\s+/g, ' ' ).trim();
+			return t.length > 80 ? t.slice( 0, 80 ) + '…' : t;
+		}
+
+		// Scan state — kept in closure so Apply can read it.
+		var scannedSections = [];
+
+		function runScan() {
 			var raw     = document.getElementById( 'jst-import-html' ).value.trim();
 			var status  = document.getElementById( 'jst-scan-status' );
 			var results = document.getElementById( 'jst-scan-results' );
 			var actions = document.getElementById( 'jst-import-actions' );
 
-			results.innerHTML = '';
+			results.innerHTML   = '';
 			actions.style.display = 'none';
+			scannedSections     = [];
 
-			if ( ! raw ) {
-				status.textContent = 'Paste HTML first.';
-				return;
-			}
+			if ( ! raw ) { status.textContent = 'No HTML yet.'; return; }
 
-			var parser  = new DOMParser();
-			var doc     = parser.parseFromString( raw, 'text/html' );
+			var doc      = ( new DOMParser() ).parseFromString( raw, 'text/html' );
 			var sections = Array.from( doc.querySelectorAll( 'section[id]' ) );
 
-			if ( ! sections.length ) {
-				status.textContent = 'No <section id="…"> elements found.';
-				return;
-			}
+			if ( ! sections.length ) { status.textContent = 'No <section id="…"> elements found.'; return; }
 
-			status.textContent = sections.length + ' sections found.';
+			status.textContent = sections.length + ' section' + ( sections.length !== 1 ? 's' : '' ) + ' found — expand to pick child elements.';
 
-			var items = [];
 			sections.forEach( function( sec ) {
-				var id   = sec.id;
-				var html = sec.outerHTML;
-				var match = partMap[ id ] || null;
+				var id       = sec.id;
+				var match    = partMap[ id ] || null;
 				var badge, badgeClass;
 
 				if ( match ) {
-					if ( match.hasContent ) {
-						badge = 'Will overwrite'; badgeClass = 'overwrite';
-					} else {
-						badge = 'Empty — fill'; badgeClass = 'empty';
-					}
+					badge = match.hasContent ? 'Will overwrite' : 'Empty — fill';
+					badgeClass = match.hasContent ? 'overwrite' : 'empty';
 				} else {
 					badge = 'New part'; badgeClass = 'new';
 				}
 
-				items.push( { id: id, html: html, match: match, badge: badge, badgeClass: badgeClass } );
+				// Collect direct child elements.
+				var children = Array.from( sec.children );
 
-				var row = document.createElement( 'div' );
-				row.className = 'jst-scan-item';
-				row.innerHTML =
-					'<input type="checkbox" class="jst-scan-check" data-idx="' + ( items.length - 1 ) + '" ' + ( badgeClass !== 'overwrite' ? 'checked' : '' ) + '>' +
-					'<code>' + id + '</code>' +
-					( match ? '' : '<span style="font-size:11px;color:#646970;">→ will create new part</span>' ) +
-					'<span class="jst-scan-badge ' + badgeClass + '">' + badge + '</span>';
-				results.appendChild( row );
+				// Store section entry with per-child element refs (actual DOM nodes from parsed doc).
+				var entry = { id: id, sec: sec, match: match, children: children, childChecks: [] };
+				scannedSections.push( entry );
+
+				// --- Section header row ---
+				var wrap   = document.createElement( 'div' );
+				wrap.className = 'jst-scan-section';
+
+				var header = document.createElement( 'div' );
+				header.className = 'jst-scan-section-header';
+
+				var secCheck = document.createElement( 'input' );
+				secCheck.type = 'checkbox';
+				secCheck.className = 'jst-scan-check';
+				secCheck.checked = ( badgeClass !== 'overwrite' );
+
+				var codeEl = document.createElement( 'code' );
+				codeEl.textContent = id;
+
+				var expandEl = document.createElement( 'span' );
+				expandEl.className = 'jst-scan-expand';
+				expandEl.textContent = children.length + ' element' + ( children.length !== 1 ? 's' : '' ) + ' ▾';
+
+				var badgeEl = document.createElement( 'span' );
+				badgeEl.className = 'jst-scan-badge ' + badgeClass;
+				badgeEl.textContent = badge;
+
+				header.appendChild( secCheck );
+				header.appendChild( codeEl );
+				if ( ! match ) {
+					var newNote = document.createElement( 'span' );
+					newNote.style.cssText = 'font-size:11px;color:#646970;';
+					newNote.textContent = '→ will create new part';
+					header.appendChild( newNote );
+				}
+				header.appendChild( expandEl );
+				header.appendChild( badgeEl );
+				wrap.appendChild( header );
+
+				// --- Children list ---
+				var childList = document.createElement( 'div' );
+				childList.className = 'jst-scan-children';
+
+				children.forEach( function( child, ci ) {
+					var row = document.createElement( 'div' );
+					row.className = 'jst-scan-child';
+
+					var cb = document.createElement( 'input' );
+					cb.type = 'checkbox';
+					cb.checked = secCheck.checked;
+					entry.childChecks.push( cb );
+
+					var lbl = document.createElement( 'code' );
+					lbl.textContent = childLabel( child );
+
+					var preview = document.createElement( 'span' );
+					preview.className = 'jst-child-preview';
+					preview.textContent = childPreview( child );
+
+					row.appendChild( cb );
+					row.appendChild( lbl );
+					row.appendChild( preview );
+					childList.appendChild( row );
+				} );
+
+				wrap.appendChild( childList );
+				results.appendChild( wrap );
+
+				// Toggle children panel on header click.
+				header.addEventListener( 'click', function( e ) {
+					if ( e.target === secCheck ) { return; } // let checkbox handle itself
+					childList.classList.toggle( 'is-open' );
+					expandEl.textContent = children.length + ' element' + ( children.length !== 1 ? 's' : '' ) + ( childList.classList.contains( 'is-open' ) ? ' ▴' : ' ▾' );
+				} );
+
+				// Section checkbox drives child checkboxes.
+				secCheck.addEventListener( 'change', function() {
+					entry.childChecks.forEach( function( cb ) { cb.checked = secCheck.checked; } );
+				} );
+
+				// If any child unchecked → uncheck section master; if all re-checked → check it.
+				entry.childChecks.forEach( function( cb ) {
+					cb.addEventListener( 'change', function() {
+						var allChecked = entry.childChecks.every( function( c ) { return c.checked; } );
+						var anyChecked = entry.childChecks.some(  function( c ) { return c.checked; } );
+						secCheck.indeterminate = anyChecked && ! allChecked;
+						secCheck.checked = allChecked;
+					} );
+				} );
 			} );
 
 			actions.style.display = 'flex';
 
-			// Select all toggle.
-			document.getElementById( 'jst-check-all' ).addEventListener( 'change', function() {
-				results.querySelectorAll( '.jst-scan-check' ).forEach( function( cb ) { cb.checked = this.checked; }.bind( this ) );
-			} );
+			// Select all / none.
+			document.getElementById( 'jst-check-all' ).onchange = function() {
+				var checked = this.checked;
+				results.querySelectorAll( 'input[type="checkbox"]' ).forEach( function( cb ) {
+					cb.checked = checked;
+					cb.indeterminate = false;
+				} );
+				scannedSections.forEach( function( entry ) {
+					entry.childChecks.forEach( function( cb ) { cb.checked = checked; } );
+				} );
+			};
 
 			// Apply.
 			document.getElementById( 'jst-apply-btn' ).onclick = function() {
@@ -1368,21 +1516,28 @@ function jst_render_parts_bulk_edit_page() {
 				var form        = document.getElementById( 'jst-bulk-form' );
 				var applied = 0;
 
-				results.querySelectorAll( '.jst-scan-check:checked' ).forEach( function( cb ) {
-					var item = items[ parseInt( cb.dataset.idx ) ];
-					if ( ! item ) { return; }
+				scannedSections.forEach( function( entry ) {
+					// Collect only checked children; skip whole section if none checked.
+					var checkedChildren = entry.children.filter( function( ch, i ) {
+						return entry.childChecks[i] && entry.childChecks[i].checked;
+					} );
+					if ( ! checkedChildren.length ) { return; }
 
-					if ( item.match ) {
-						// Fill existing textarea.
-						item.match.textarea.value = item.html;
+					// Build output HTML: reassemble section with only selected children.
+					var outerOpen  = entry.sec.outerHTML.match( /^(<section[^>]*>)/i );
+					var openTag    = outerOpen ? outerOpen[1] : '<section id="' + entry.id + '">';
+					var innerHtml  = checkedChildren.map( function( ch ) { return ch.outerHTML; } ).join( '\n' );
+					var finalHtml  = openTag + '\n' + innerHtml + '\n</section>';
+
+					if ( entry.match ) {
+						entry.match.textarea.value = finalHtml;
 					} else {
-						// New part — add hidden input so PHP creates it on save.
-						var existing = form.querySelector( 'input[name="jst_new_part[' + item.id + ']"]' );
+						var existing = form.querySelector( 'input[name="jst_new_part[' + entry.id + ']"]' );
 						if ( existing ) { existing.remove(); }
 						var hidden = document.createElement( 'input' );
 						hidden.type  = 'hidden';
-						hidden.name  = 'jst_new_part[' + item.id + ']';
-						hidden.value = item.html;
+						hidden.name  = 'jst_new_part[' + entry.id + ']';
+						hidden.value = finalHtml;
 						form.appendChild( hidden );
 					}
 					applied++;
@@ -1393,7 +1548,7 @@ function jst_render_parts_bulk_edit_page() {
 				toggleBtn.textContent = '↑ Import Template';
 				window.scrollTo( { top: 0, behavior: 'smooth' } );
 			};
-		} );
+		}
 	} )();
 	</script>
 	<?php
