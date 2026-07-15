@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.8.4' );
+define( 'JST_VERSION', '1.8.5' );
 
 
 /**
@@ -1402,8 +1402,16 @@ function jst_render_parts_bulk_edit_page() {
 					badge = 'New part'; badgeClass = 'new';
 				}
 
-				// Collect direct child elements.
+				// Collect meaningful children — unwrap single generic-div containers
+				// (e.g. div.section-wrap) so we get the real headline/grid/etc.
 				var children = Array.from( sec.children );
+				while (
+					children.length === 1 &&
+					children[0].tagName.toLowerCase() === 'div' &&
+					children[0].children.length > 0
+				) {
+					children = Array.from( children[0].children );
+				}
 
 				// Store section entry with per-child element refs (actual DOM nodes from parsed doc).
 				var entry = { id: id, sec: sec, match: match, children: children, childChecks: [] };
