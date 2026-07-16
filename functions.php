@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.8.7' );
+define( 'JST_VERSION', '1.8.8' );
 
 
 /**
@@ -161,25 +161,81 @@ function jst_render_theme_options_page() {
 	<style>
 	#jst-sticky-save {
 		position: sticky;
-		top: 32px; /* below WP admin bar */
+		top: 32px;
 		z-index: 100;
 		background: #fff;
 		border-bottom: 1px solid #dcdcde;
-		padding: 10px 0 10px 4px;
+		padding: 10px 0 10px 14px;
 		margin-bottom: 1rem;
 		display: flex;
 		align-items: center;
 		gap: 1rem;
 	}
-	#jst-sticky-save .jst-save-label {
-		font-weight: 600;
-		color: #1d2327;
-		margin-right: 8px;
+	#jst-sticky-save .jst-save-label { font-weight: 600; color: #1d2327; margin-right: 8px; }
+
+	/* Two-column layout */
+	#jst-options-columns { display: flex; gap: 20px; align-items: flex-start; }
+	#jst-options-fields  { flex: 1; min-width: 0; }
+	#jst-options-import-col {
+		width: 320px;
+		flex-shrink: 0;
+		position: sticky;
+		top: 80px;
+		max-height: calc(100vh - 100px);
+		overflow-y: auto;
 	}
+
+	/* Import panel */
+	#jst-opts-import {
+		background: #f6f7f7;
+		border: 1px solid #dcdcde;
+		border-radius: 4px;
+		padding: 14px;
+		font-size: 12px;
+	}
+	#jst-opts-import h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; }
+	#jst-opts-import textarea { width: 100%; font-family: monospace; font-size: 11px; resize: vertical; box-sizing: border-box; }
+	.jst-opts-extracted {
+		background: #fff;
+		border: 1px solid #dcdcde;
+		border-radius: 3px;
+		margin-bottom: 6px;
+		overflow: hidden;
+	}
+	.jst-opts-ext-header {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 8px 10px;
+		font-size: 12px;
+		font-weight: 600;
+	}
+	.jst-opts-ext-preview {
+		border-top: 1px solid #f0f0f1;
+		padding: 6px 10px;
+		font-family: monospace;
+		font-size: 10px;
+		color: #646970;
+		white-space: pre;
+		overflow-x: auto;
+		max-height: 80px;
+		background: #fafafa;
+	}
+	.jst-opts-badge {
+		font-size: 10px;
+		font-weight: 700;
+		padding: 2px 5px;
+		border-radius: 3px;
+		text-transform: uppercase;
+		margin-left: auto;
+	}
+	.jst-opts-badge.found  { background: #d1e7dd; color: #0a3622; }
+	.jst-opts-badge.empty  { background: #f8d7da; color: #58151c; }
 	</style>
+
 	<div class="wrap">
 		<h1><?php esc_html_e( 'Theme Options', 'just-spectacular-theme' ); ?></h1>
-		<form method="post" action="">
+		<form method="post" action="" id="jst-opts-form">
 			<?php wp_nonce_field( 'jst_save_theme_options', 'jst_theme_options_nonce' ); ?>
 
 			<div id="jst-sticky-save">
@@ -187,44 +243,246 @@ function jst_render_theme_options_page() {
 				<?php submit_button( __( 'Save Options', 'just-spectacular-theme' ), 'primary', 'submit', false ); ?>
 			</div>
 
-			<?php foreach ( $fields as $field_id => $field ) : ?>
-				<h2><?php echo esc_html( $field['label'] ); ?></h2>
-				<p>
-					<button type="button" class="button jst-quick-tag-btn" data-target="<?php echo esc_attr( $field_id ); ?>" data-tag="style"><?php esc_html_e( 'Insert <style>', 'just-spectacular-theme' ); ?></button>
-					<button type="button" class="button jst-quick-tag-btn" data-target="<?php echo esc_attr( $field_id ); ?>" data-tag="script"><?php esc_html_e( 'Insert <script>', 'just-spectacular-theme' ); ?></button>
-					<button type="button" class="button jst-quick-tag-btn" data-target="<?php echo esc_attr( $field_id ); ?>" data-tag="comment"><?php esc_html_e( 'Insert <!-- -->', 'just-spectacular-theme' ); ?></button>
-				</p>
-				<p>
-					<textarea id="<?php echo esc_attr( $field_id ); ?>" name="<?php echo esc_attr( $field_id ); ?>" rows="14" class="jst-metabox-field" style="width:100%;font-family:monospace;"><?php echo get_option( $field_id, '' ); // phpcs:ignore -- intentionally unescaped raw HTML/script storage. ?></textarea>
-				</p>
-				<p><span class="description"><?php echo esc_html( $field['description'] ); ?></span></p>
-			<?php endforeach; ?>
+			<div id="jst-options-columns">
 
-			<h2><?php esc_html_e( 'Content Styling', 'just-spectacular-theme' ); ?></h2>
-			<p>
-				<label>
-					<input type="checkbox" name="jst_disable_tailwind_prose" value="1" <?php checked( $disable_prose, '1' ); ?> />
-					<?php esc_html_e( 'Disable Tailwind "prose" class on post/page content', 'just-spectacular-theme' ); ?>
-				</label>
-				<br>
-				<span class="description">
-					<?php esc_html_e( 'The "prose" class is added to post/page content by default (requires the Tailwind Typography plugin loaded via Header Scripts). Check this box to remove it sitewide.', 'just-spectacular-theme' ); ?>
-				</span>
-			</p>
-			<p>
-				<label>
-					<input type="checkbox" name="jst_prose_invert" value="1" <?php checked( $prose_invert, '1' ); ?> />
-					<?php esc_html_e( 'Prose invert (dark background)', 'just-spectacular-theme' ); ?>
-				</label>
-				<br>
-				<span class="description">
-					<?php esc_html_e( 'Adds "prose-invert" sitewide — flips prose text/heading/link colors to light variants for dark background sites. Can also be set per-page in Page Settings.', 'just-spectacular-theme' ); ?>
-				</span>
-			</p>
+				<!-- Left: the four textareas + content styling -->
+				<div id="jst-options-fields">
+					<?php foreach ( $fields as $field_id => $field ) : ?>
+						<h2><?php echo esc_html( $field['label'] ); ?></h2>
+						<p>
+							<button type="button" class="button jst-quick-tag-btn" data-target="<?php echo esc_attr( $field_id ); ?>" data-tag="style"><?php esc_html_e( 'Insert <style>', 'just-spectacular-theme' ); ?></button>
+							<button type="button" class="button jst-quick-tag-btn" data-target="<?php echo esc_attr( $field_id ); ?>" data-tag="script"><?php esc_html_e( 'Insert <script>', 'just-spectacular-theme' ); ?></button>
+							<button type="button" class="button jst-quick-tag-btn" data-target="<?php echo esc_attr( $field_id ); ?>" data-tag="comment"><?php esc_html_e( 'Insert <!-- -->', 'just-spectacular-theme' ); ?></button>
+						</p>
+						<p>
+							<textarea id="<?php echo esc_attr( $field_id ); ?>" name="<?php echo esc_attr( $field_id ); ?>" rows="14" class="jst-metabox-field" style="width:100%;font-family:monospace;"><?php echo get_option( $field_id, '' ); // phpcs:ignore -- intentionally unescaped raw HTML/script storage. ?></textarea>
+						</p>
+						<p><span class="description"><?php echo esc_html( $field['description'] ); ?></span></p>
+					<?php endforeach; ?>
 
-			<?php submit_button( __( 'Save Options', 'just-spectacular-theme' ) ); ?>
+					<h2><?php esc_html_e( 'Content Styling', 'just-spectacular-theme' ); ?></h2>
+					<p>
+						<label>
+							<input type="checkbox" name="jst_disable_tailwind_prose" value="1" <?php checked( $disable_prose, '1' ); ?> />
+							<?php esc_html_e( 'Disable Tailwind "prose" class on post/page content', 'just-spectacular-theme' ); ?>
+						</label>
+						<br>
+						<span class="description">
+							<?php esc_html_e( 'The "prose" class is added to post/page content by default (requires the Tailwind Typography plugin loaded via Header Scripts). Check this box to remove it sitewide.', 'just-spectacular-theme' ); ?>
+						</span>
+					</p>
+					<p>
+						<label>
+							<input type="checkbox" name="jst_prose_invert" value="1" <?php checked( $prose_invert, '1' ); ?> />
+							<?php esc_html_e( 'Prose invert (dark background)', 'just-spectacular-theme' ); ?>
+						</label>
+						<br>
+						<span class="description">
+							<?php esc_html_e( 'Adds "prose-invert" sitewide — flips prose text/heading/link colors to light variants for dark background sites. Can also be set per-page in Page Settings.', 'just-spectacular-theme' ); ?>
+						</span>
+					</p>
+
+					<?php submit_button( __( 'Save Options', 'just-spectacular-theme' ) ); ?>
+				</div>
+
+				<!-- Right: import panel -->
+				<div id="jst-options-import-col">
+					<div id="jst-opts-import">
+						<h3><?php esc_html_e( 'Import from HTML Template', 'just-spectacular-theme' ); ?></h3>
+						<p style="color:#646970;font-size:11px;margin:0 0 8px;"><?php esc_html_e( 'Upload your base HTML file. The scanner extracts nav, header scripts, footer, and footer scripts automatically.', 'just-spectacular-theme' ); ?></p>
+						<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+							<label class="button button-small" style="cursor:pointer;">
+								<?php esc_html_e( 'Upload HTML File', 'just-spectacular-theme' ); ?>
+								<input type="file" id="jst-opts-file" accept=".html,text/html" style="display:none;">
+							</label>
+							<span style="color:#646970;font-size:11px;"><?php esc_html_e( 'or paste ↓', 'just-spectacular-theme' ); ?></span>
+						</div>
+						<textarea id="jst-opts-html" rows="5" placeholder="Paste full HTML here…"></textarea>
+						<div style="margin-top:6px;display:flex;gap:8px;align-items:center;">
+							<button type="button" id="jst-opts-scan-btn" class="button button-primary button-small"><?php esc_html_e( 'Scan', 'just-spectacular-theme' ); ?></button>
+							<span id="jst-opts-status" style="font-size:11px;color:#646970;"></span>
+						</div>
+						<div id="jst-opts-results" style="margin-top:10px;"></div>
+						<div id="jst-opts-actions" style="display:none;margin-top:8px;gap:8px;align-items:center;flex-wrap:wrap;">
+							<button type="button" id="jst-opts-apply-btn" class="button button-primary button-small"><?php esc_html_e( 'Apply All Found', 'just-spectacular-theme' ); ?></button>
+							<span id="jst-opts-apply-status" style="font-size:11px;color:#646970;"></span>
+						</div>
+					</div>
+				</div>
+
+			</div><!-- #jst-options-columns -->
 		</form>
 	</div>
+
+	<script>
+	( function() {
+		var fileInput = document.getElementById( 'jst-opts-file' );
+		var htmlArea  = document.getElementById( 'jst-opts-html' );
+		var scanBtn   = document.getElementById( 'jst-opts-scan-btn' );
+		var status    = document.getElementById( 'jst-opts-status' );
+		var results   = document.getElementById( 'jst-opts-results' );
+		var actions   = document.getElementById( 'jst-opts-actions' );
+
+		// Extracted content keyed by option field id.
+		var extracted = {};
+
+		fileInput.addEventListener( 'change', function( e ) {
+			var file = e.target.files[0];
+			if ( ! file ) { return; }
+			var reader = new FileReader();
+			reader.onload = function( ev ) {
+				htmlArea.value = ev.target.result;
+				runScan();
+			};
+			reader.readAsText( file );
+		} );
+
+		scanBtn.addEventListener( 'click', runScan );
+
+		function outerHtmlOf( el ) { return el ? el.outerHTML : ''; }
+
+		function runScan() {
+			var raw = htmlArea.value.trim();
+			results.innerHTML = '';
+			actions.style.display = 'none';
+			extracted = {};
+
+			if ( ! raw ) { status.textContent = 'No HTML yet.'; return; }
+
+			var doc = ( new DOMParser() ).parseFromString( raw, 'text/html' );
+
+			// --- 1. Nav / Header ---
+			// Look for: <header id="site-nav">, <header id="nav">, <div id="topbar">,
+			// <section id="nav">, <nav>, any element with id/class containing "topbar".
+			var navEl = (
+				doc.querySelector( 'header[id*="nav"]' ) ||
+				doc.querySelector( 'header[id*="header"]' ) ||
+				doc.querySelector( '[id="topbar"]' ) ||
+				doc.querySelector( '[class*="topbar"]' ) ||
+				doc.querySelector( 'section[id*="nav"]' ) ||
+				doc.querySelector( 'nav' ) ||
+				doc.querySelector( 'header' )
+			);
+			// Also grab a topbar sibling if it exists separately.
+			var topbarEl = ( navEl && ! navEl.matches( '[id*="topbar"],[class*="topbar"]' ) )
+				? doc.querySelector( '[id*="topbar"],[class*="topbar"]' )
+				: null;
+			var navHtml = '';
+			if ( topbarEl ) { navHtml += topbarEl.outerHTML + '\n'; }
+			if ( navEl    ) { navHtml += navEl.outerHTML; }
+			navHtml = navHtml.trim();
+			extracted['jst_navigation'] = navHtml;
+
+			// --- 2. Header Scripts / CSS ---
+			// All <link rel="stylesheet">, font <link>, <style> in <head>.
+			// Exclude <meta>, <title>, <base>, <script> (those go to footer scripts).
+			var headScriptParts = [];
+			if ( doc.head ) {
+				Array.from( doc.head.children ).forEach( function( el ) {
+					var tag = el.tagName.toLowerCase();
+					if ( tag === 'meta' || tag === 'title' || tag === 'base' ) { return; }
+					// include <link>, <style>, <script> in head
+					headScriptParts.push( el.outerHTML );
+				} );
+			}
+			extracted['jst_header_scripts'] = headScriptParts.join( '\n' ).trim();
+
+			// --- 3. Footer HTML ---
+			// <footer> element + any sticky CTA (.cta-sticky-mobile / #cta-sticky-mobile / [class*="sticky"][class*="cta"]).
+			var footerEl  = doc.querySelector( 'footer' );
+			var stickyCta = (
+				doc.querySelector( '#cta-sticky-mobile' ) ||
+				doc.querySelector( '.cta-sticky-mobile' ) ||
+				doc.querySelector( '[class*="sticky-cta"],[class*="cta-sticky"],[id*="sticky-cta"],[id*="cta-sticky"]' )
+			);
+			var footerHtml = '';
+			// If sticky CTA is inside the footer don't double-add it.
+			if ( stickyCta && footerEl && footerEl.contains( stickyCta ) ) { stickyCta = null; }
+			if ( stickyCta ) { footerHtml += stickyCta.outerHTML + '\n'; }
+			if ( footerEl  ) { footerHtml += footerEl.outerHTML; }
+			extracted['jst_footer'] = footerHtml.trim();
+
+			// --- 4. Footer Scripts ---
+			// <script> tags that appear in <body> (typically at the bottom).
+			var bodyScripts = [];
+			if ( doc.body ) {
+				Array.from( doc.body.querySelectorAll( 'script' ) ).forEach( function( el ) {
+					bodyScripts.push( el.outerHTML );
+				} );
+			}
+			extracted['jst_footer_scripts'] = bodyScripts.join( '\n' ).trim();
+
+			// Render results.
+			var labels = {
+				'jst_navigation':     'Header Nav / Menu',
+				'jst_header_scripts': 'Header Scripts & CSS',
+				'jst_footer':         'Footer HTML',
+				'jst_footer_scripts': 'Footer Scripts',
+			};
+			var foundCount = 0;
+			Object.keys( labels ).forEach( function( key ) {
+				var content = extracted[ key ] || '';
+				var found   = content.length > 0;
+				if ( found ) { foundCount++; }
+
+				var card = document.createElement( 'div' );
+				card.className = 'jst-opts-extracted';
+
+				var hdr = document.createElement( 'div' );
+				hdr.className = 'jst-opts-ext-header';
+
+				var cb = document.createElement( 'input' );
+				cb.type    = 'checkbox';
+				cb.checked = found;
+				cb.dataset.field = key;
+				if ( ! found ) { cb.disabled = true; }
+
+				var lbl = document.createElement( 'span' );
+				lbl.textContent = labels[ key ];
+
+				var badge = document.createElement( 'span' );
+				badge.className = 'jst-opts-badge ' + ( found ? 'found' : 'empty' );
+				badge.textContent = found ? 'Found' : 'Not found';
+
+				hdr.appendChild( cb );
+				hdr.appendChild( lbl );
+				hdr.appendChild( badge );
+				card.appendChild( hdr );
+
+				if ( found ) {
+					var pre = document.createElement( 'div' );
+					pre.className = 'jst-opts-ext-preview';
+					pre.textContent = content.slice( 0, 400 ) + ( content.length > 400 ? '\n…' : '' );
+					card.appendChild( pre );
+				}
+
+				results.appendChild( card );
+			} );
+
+			status.textContent = foundCount + ' of 4 sections found.';
+			if ( foundCount > 0 ) {
+				actions.style.display = 'flex';
+			}
+		}
+
+		document.getElementById( 'jst-opts-apply-btn' ).addEventListener( 'click', function() {
+			var applyStatus = document.getElementById( 'jst-opts-apply-status' );
+			var applied = 0;
+
+			results.querySelectorAll( 'input[type="checkbox"]:checked' ).forEach( function( cb ) {
+				var field   = cb.dataset.field;
+				var content = extracted[ field ];
+				var ta      = document.getElementById( field );
+				if ( ta && content ) {
+					ta.value = content;
+					applied++;
+				}
+			} );
+
+			applyStatus.textContent = applied + ' field' + ( applied !== 1 ? 's' : '' ) + ' applied — hit Save Options to commit.';
+		} );
+	} )();
+	</script>
 	<?php
 }
 
@@ -1164,7 +1422,7 @@ function jst_render_parts_bulk_edit_page() {
 		z-index: 100;
 		background: #fff;
 		border-bottom: 1px solid #dcdcde;
-		padding: 10px 0 10px 4px;
+		padding: 10px 0 10px 14px;
 		margin-bottom: 1.5rem;
 		display: flex;
 		align-items: center;
