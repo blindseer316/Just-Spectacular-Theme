@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.8.5' );
+define( 'JST_VERSION', '1.8.6' );
 
 
 /**
@@ -1169,48 +1169,62 @@ function jst_render_parts_bulk_edit_page() {
 		display: flex;
 		align-items: center;
 		gap: 1rem;
-		flex-wrap: wrap;
 	}
 	#jst-bulk-sticky strong { font-size: 13px; color: #1d2327; margin-right: 8px; }
-	#jst-import-toggle { margin-left: auto; }
 
-	/* Import panel */
+	/* Two-column layout */
+	#jst-bulk-columns {
+		display: flex;
+		gap: 20px;
+		align-items: flex-start;
+	}
+	#jst-parts-col {
+		flex: 1;
+		min-width: 0;
+	}
+	#jst-import-col {
+		width: 340px;
+		flex-shrink: 0;
+		position: sticky;
+		top: 80px; /* below the sticky bar */
+		max-height: calc(100vh - 100px);
+		overflow-y: auto;
+	}
+
+	/* Import panel (always visible in right column) */
 	#jst-import-panel {
-		display: none;
 		background: #f6f7f7;
 		border: 1px solid #dcdcde;
 		border-radius: 4px;
 		padding: 16px;
-		margin-bottom: 1.5rem;
 	}
-	#jst-import-panel.is-open { display: block; }
-	#jst-import-panel h3 { margin: 0 0 10px; font-size: 13px; }
-	#jst-import-html { width: 100%; font-family: monospace; font-size: 12px; resize: vertical; }
-	#jst-scan-results { margin-top: 14px; }
+	#jst-import-panel h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+	#jst-import-html { width: 100%; font-family: monospace; font-size: 11px; resize: vertical; box-sizing: border-box; }
+	#jst-scan-results { margin-top: 10px; }
 
 	/* Section row */
 	.jst-scan-section {
 		background: #fff;
 		border: 1px solid #dcdcde;
 		border-radius: 3px;
-		margin-bottom: 8px;
-		font-size: 13px;
+		margin-bottom: 6px;
+		font-size: 12px;
 		overflow: hidden;
 	}
 	.jst-scan-section-header {
 		display: flex;
 		align-items: center;
-		gap: 10px;
-		padding: 10px 12px;
+		gap: 8px;
+		padding: 8px 10px;
 		cursor: pointer;
 		user-select: none;
 	}
 	.jst-scan-section-header:hover { background: #f9f9f9; }
-	.jst-scan-section-header code { font-size: 11px; background: #f0f0f1; padding: 2px 5px; border-radius: 3px; }
+	.jst-scan-section-header code { font-size: 11px; background: #f0f0f1; padding: 2px 4px; border-radius: 3px; }
 	.jst-scan-badge {
 		font-size: 10px;
 		font-weight: 700;
-		padding: 2px 6px;
+		padding: 2px 5px;
 		border-radius: 3px;
 		text-transform: uppercase;
 		margin-left: auto;
@@ -1219,29 +1233,29 @@ function jst_render_parts_bulk_edit_page() {
 	.jst-scan-badge.new { background: #d1e7dd; color: #0a3622; }
 	.jst-scan-badge.overwrite { background: #fff3cd; color: #664d03; }
 	.jst-scan-badge.empty { background: #e2e3e5; color: #41464b; }
-	.jst-scan-expand { font-size: 11px; color: #646970; flex-shrink: 0; }
+	.jst-scan-expand { font-size: 10px; color: #646970; flex-shrink: 0; }
 
 	/* Child element rows */
 	.jst-scan-children {
 		display: none;
 		border-top: 1px solid #f0f0f1;
-		padding: 6px 12px 10px 36px;
+		padding: 4px 10px 8px 30px;
 		background: #fafafa;
 	}
 	.jst-scan-children.is-open { display: block; }
 	.jst-scan-child {
 		display: flex;
 		align-items: baseline;
-		gap: 8px;
-		padding: 4px 0;
-		font-size: 12px;
+		gap: 6px;
+		padding: 3px 0;
+		font-size: 11px;
 		border-bottom: 1px solid #f0f0f1;
 	}
 	.jst-scan-child:last-child { border-bottom: none; }
-	.jst-scan-child code { font-size: 11px; background: #f0f0f1; padding: 1px 4px; border-radius: 3px; }
-	.jst-scan-child .jst-child-preview { color: #646970; font-size: 11px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 360px; }
+	.jst-scan-child code { font-size: 10px; background: #f0f0f1; padding: 1px 3px; border-radius: 3px; white-space: nowrap; }
+	.jst-scan-child .jst-child-preview { color: #646970; font-size: 10px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 
-	#jst-import-actions { margin-top: 12px; display: flex; gap: 8px; align-items: center; }
+	#jst-import-actions { margin-top: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
 	/* Parts list */
 	.jst-bulk-part {
@@ -1251,9 +1265,12 @@ function jst_render_parts_bulk_edit_page() {
 		margin-bottom: 1.5rem;
 		padding: 16px;
 	}
-	.jst-bulk-part h3 { margin: 0 0 4px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+	.jst-bulk-part h3 { margin: 0 0 4px; font-size: 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 	.jst-bulk-part code { font-size: 11px; background: #f0f0f1; padding: 2px 6px; border-radius: 3px; font-weight: 400; }
 	.jst-bulk-part textarea { width: 100%; font-family: monospace; font-size: 12px; margin-top: 8px; resize: vertical; }
+	.jst-part-actions { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+	.jst-delete-part { font-size: 11px; font-weight: 400; color: #b32d2e; text-decoration: none; }
+	.jst-delete-part:hover { color: #8a1f1f; text-decoration: underline; }
 	</style>
 
 	<div class="wrap">
@@ -1264,57 +1281,70 @@ function jst_render_parts_bulk_edit_page() {
 			<div id="jst-bulk-sticky">
 				<strong><?php esc_html_e( 'JST Template Parts', 'just-spectacular-theme' ); ?></strong>
 				<?php submit_button( __( 'Save All Parts', 'just-spectacular-theme' ), 'primary', 'submit', false ); ?>
-				<button type="button" id="jst-import-toggle" class="button"><?php esc_html_e( '↑ Import Template', 'just-spectacular-theme' ); ?></button>
 			</div>
 
-			<!-- Import panel -->
-			<div id="jst-import-panel">
-				<h3><?php esc_html_e( 'Import from HTML Template', 'just-spectacular-theme' ); ?></h3>
-				<p style="margin:0 0 10px;color:#646970;font-size:12px;"><?php esc_html_e( 'Upload an HTML file or paste below. The scanner finds every <section id="…">, then lets you pick individual child elements so you can import just the grid and skip the headline.', 'just-spectacular-theme' ); ?></p>
-				<div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;">
-					<label class="button" style="cursor:pointer;">
-						<?php esc_html_e( 'Upload HTML File', 'just-spectacular-theme' ); ?>
-						<input type="file" id="jst-import-file" accept=".html,text/html" style="display:none;">
-					</label>
-					<span style="font-size:12px;color:#646970;"><?php esc_html_e( '— or paste below —', 'just-spectacular-theme' ); ?></span>
-				</div>
-				<textarea id="jst-import-html" rows="6" placeholder="Paste full HTML here…"></textarea>
-				<div style="margin-top:8px;display:flex;gap:8px;align-items:center;">
-					<button type="button" id="jst-scan-btn" class="button button-primary"><?php esc_html_e( 'Scan', 'just-spectacular-theme' ); ?></button>
-					<span id="jst-scan-status" style="font-size:12px;color:#646970;"></span>
-				</div>
-				<div id="jst-scan-results"></div>
-				<div id="jst-import-actions" style="display:none;">
-					<button type="button" id="jst-apply-btn" class="button button-primary"><?php esc_html_e( 'Apply Selected', 'just-spectacular-theme' ); ?></button>
-					<label style="font-size:12px;"><input type="checkbox" id="jst-check-all" checked> <?php esc_html_e( 'Select all', 'just-spectacular-theme' ); ?></label>
-					<span id="jst-apply-status" style="font-size:12px;color:#646970;"></span>
-				</div>
-			</div>
+			<div id="jst-bulk-columns">
 
-			<!-- Parts list -->
-			<?php if ( empty( $parts ) ) : ?>
-				<p><?php esc_html_e( 'No Template Parts found. Use Import to create them from a template, or add one manually.', 'just-spectacular-theme' ); ?></p>
-			<?php else : ?>
-				<?php foreach ( $parts as $part ) :
-					$name      = get_post_meta( $part->ID, '_jst_part_name', true );
-					$html      = get_post_meta( $part->ID, '_jst_part_html', true );
-					$shortcode = $name ? '[jst_part name="' . esc_attr( $name ) . '"]' : '';
-				?>
-				<div class="jst-bulk-part" data-part-name="<?php echo esc_attr( $name ); ?>">
-					<h3>
-						<?php echo esc_html( $part->post_title ); ?>
-						<?php if ( $shortcode ) : ?>
-							<code><?php echo esc_html( $shortcode ); ?></code>
-							<button type="button" class="button jst-copy-btn" data-copy="<?php echo esc_attr( $shortcode ); ?>"><?php esc_html_e( 'Copy', 'just-spectacular-theme' ); ?></button>
-						<?php endif; ?>
-						<a href="<?php echo esc_url( get_edit_post_link( $part->ID ) ); ?>" style="font-size:11px;font-weight:400;margin-left:auto;"><?php esc_html_e( 'Edit settings →', 'just-spectacular-theme' ); ?></a>
-					</h3>
-					<textarea name="jst_part_html[<?php echo esc_attr( $part->ID ); ?>]" rows="12" class="jst-metabox-field"><?php echo $html; // phpcs:ignore -- intentionally unescaped raw HTML. ?></textarea>
-				</div>
-				<?php endforeach; ?>
-			<?php endif; ?>
+				<!-- Left: parts list -->
+				<div id="jst-parts-col">
+					<?php if ( empty( $parts ) ) : ?>
+						<p><?php esc_html_e( 'No Template Parts found. Use Import on the right to create them from a template, or add one manually.', 'just-spectacular-theme' ); ?></p>
+					<?php else : ?>
+						<?php foreach ( $parts as $part ) :
+							$name       = get_post_meta( $part->ID, '_jst_part_name', true );
+							$html       = get_post_meta( $part->ID, '_jst_part_html', true );
+							$shortcode  = $name ? '[jst_part name="' . esc_attr( $name ) . '"]' : '';
+							$delete_url = get_delete_post_link( $part->ID );
+						?>
+						<div class="jst-bulk-part" data-part-name="<?php echo esc_attr( $name ); ?>">
+							<h3>
+								<?php echo esc_html( $part->post_title ); ?>
+								<?php if ( $shortcode ) : ?>
+									<code><?php echo esc_html( $shortcode ); ?></code>
+									<button type="button" class="button button-small jst-copy-btn" data-copy="<?php echo esc_attr( $shortcode ); ?>"><?php esc_html_e( 'Copy', 'just-spectacular-theme' ); ?></button>
+								<?php endif; ?>
+								<span class="jst-part-actions">
+									<a href="<?php echo esc_url( get_edit_post_link( $part->ID ) ); ?>" style="font-size:11px;"><?php esc_html_e( 'Settings →', 'just-spectacular-theme' ); ?></a>
+									<?php if ( $delete_url ) : ?>
+										<a href="<?php echo esc_url( $delete_url ); ?>" class="jst-delete-part" onclick="return confirm('Move this Template Part to Trash?');"><?php esc_html_e( 'Delete', 'just-spectacular-theme' ); ?></a>
+									<?php endif; ?>
+								</span>
+							</h3>
+							<textarea name="jst_part_html[<?php echo esc_attr( $part->ID ); ?>]" rows="12" class="jst-metabox-field"><?php echo $html; // phpcs:ignore -- intentionally unescaped raw HTML. ?></textarea>
+						</div>
+						<?php endforeach; ?>
+					<?php endif; ?>
 
-			<?php submit_button( __( 'Save All Parts', 'just-spectacular-theme' ) ); ?>
+					<?php submit_button( __( 'Save All Parts', 'just-spectacular-theme' ) ); ?>
+				</div>
+
+				<!-- Right: import panel (sticky) -->
+				<div id="jst-import-col">
+					<div id="jst-import-panel">
+						<h3><?php esc_html_e( 'Import from HTML Template', 'just-spectacular-theme' ); ?></h3>
+						<p style="margin:0 0 8px;color:#646970;font-size:11px;"><?php esc_html_e( 'Upload a file or paste HTML. Scanner finds <section id="…"> blocks — expand each to pick individual child elements.', 'just-spectacular-theme' ); ?></p>
+						<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+							<label class="button button-small" style="cursor:pointer;">
+								<?php esc_html_e( 'Upload HTML File', 'just-spectacular-theme' ); ?>
+								<input type="file" id="jst-import-file" accept=".html,text/html" style="display:none;">
+							</label>
+							<span style="font-size:11px;color:#646970;"><?php esc_html_e( 'or paste ↓', 'just-spectacular-theme' ); ?></span>
+						</div>
+						<textarea id="jst-import-html" rows="5" placeholder="Paste full HTML here…"></textarea>
+						<div style="margin-top:6px;display:flex;gap:8px;align-items:center;">
+							<button type="button" id="jst-scan-btn" class="button button-primary button-small"><?php esc_html_e( 'Scan', 'just-spectacular-theme' ); ?></button>
+							<span id="jst-scan-status" style="font-size:11px;color:#646970;"></span>
+						</div>
+						<div id="jst-scan-results"></div>
+						<div id="jst-import-actions" style="display:none;">
+							<button type="button" id="jst-apply-btn" class="button button-primary button-small"><?php esc_html_e( 'Apply Selected', 'just-spectacular-theme' ); ?></button>
+							<label style="font-size:11px;"><input type="checkbox" id="jst-check-all" checked> <?php esc_html_e( 'All', 'just-spectacular-theme' ); ?></label>
+							<span id="jst-apply-status" style="font-size:11px;color:#646970;"></span>
+						</div>
+					</div>
+				</div>
+
+			</div><!-- #jst-bulk-columns -->
 		</form>
 	</div>
 
@@ -1330,13 +1360,7 @@ function jst_render_parts_bulk_edit_page() {
 			}
 		} );
 
-		// Toggle import panel.
-		var toggleBtn = document.getElementById( 'jst-import-toggle' );
-		var panel     = document.getElementById( 'jst-import-panel' );
-		toggleBtn.addEventListener( 'click', function() {
-			var open = panel.classList.toggle( 'is-open' );
-			toggleBtn.textContent = open ? '✕ Close Import' : '↑ Import Template';
-		} );
+		// No toggle needed — import panel is always visible in the right column.
 
 		// File upload → populate textarea and auto-scan.
 		document.getElementById( 'jst-import-file' ).addEventListener( 'change', function( e ) {
@@ -1531,11 +1555,9 @@ function jst_render_parts_bulk_edit_page() {
 					} );
 					if ( ! checkedChildren.length ) { return; }
 
-					// Build output HTML: reassemble section with only selected children.
-					var outerOpen  = entry.sec.outerHTML.match( /^(<section[^>]*>)/i );
-					var openTag    = outerOpen ? outerOpen[1] : '<section id="' + entry.id + '">';
-					var innerHtml  = checkedChildren.map( function( ch ) { return ch.outerHTML; } ).join( '\n' );
-					var finalHtml  = openTag + '\n' + innerHtml + '\n</section>';
+					// Output only the selected child fragments — no <section> wrapper,
+					// since the section already exists on the front end.
+					var finalHtml = checkedChildren.map( function( ch ) { return ch.outerHTML; } ).join( '\n' );
 
 					if ( entry.match ) {
 						entry.match.textarea.value = finalHtml;
@@ -1552,9 +1574,6 @@ function jst_render_parts_bulk_edit_page() {
 				} );
 
 				applyStatus.textContent = applied + ' part' + ( applied !== 1 ? 's' : '' ) + ' applied — hit Save All to commit.';
-				panel.classList.remove( 'is-open' );
-				toggleBtn.textContent = '↑ Import Template';
-				window.scrollTo( { top: 0, behavior: 'smooth' } );
 			};
 		}
 	} )();
