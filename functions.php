@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.8.6' );
+define( 'JST_VERSION', '1.8.7' );
 
 
 /**
@@ -1438,7 +1438,7 @@ function jst_render_parts_bulk_edit_page() {
 				}
 
 				// Store section entry with per-child element refs (actual DOM nodes from parsed doc).
-				var entry = { id: id, sec: sec, match: match, children: children, childChecks: [] };
+				var entry = { id: id, sec: sec, match: match, children: children, childChecks: [], wrapCheck: null };
 				scannedSections.push( entry );
 
 				// --- Section header row ---
@@ -1502,6 +1502,20 @@ function jst_render_parts_bulk_edit_page() {
 					childList.appendChild( row );
 				} );
 
+				// --- Wrap toggle footer inside children panel ---
+				var wrapRow = document.createElement( 'div' );
+				wrapRow.style.cssText = 'padding:6px 10px 6px 30px;border-top:1px solid #f0f0f1;display:flex;align-items:center;gap:6px;font-size:11px;color:#646970;background:#f6f7f7;';
+				var wrapCb = document.createElement( 'input' );
+				wrapCb.type    = 'checkbox';
+				wrapCb.checked = false;
+				entry.wrapCheck = wrapCb;
+				var wrapLbl = document.createElement( 'label' );
+				wrapLbl.style.cssText = 'font-size:11px;color:#646970;cursor:pointer;';
+				wrapLbl.textContent = 'Include <section> wrapper';
+				wrapLbl.prepend( wrapCb );
+				wrapRow.appendChild( wrapLbl );
+				childList.appendChild( wrapRow );
+
 				wrap.appendChild( childList );
 				results.appendChild( wrap );
 
@@ -1555,9 +1569,16 @@ function jst_render_parts_bulk_edit_page() {
 					} );
 					if ( ! checkedChildren.length ) { return; }
 
-					// Output only the selected child fragments — no <section> wrapper,
-					// since the section already exists on the front end.
-					var finalHtml = checkedChildren.map( function( ch ) { return ch.outerHTML; } ).join( '\n' );
+					// Build output: children only, or wrapped in <section> if the toggle is on.
+					var innerHtml = checkedChildren.map( function( ch ) { return ch.outerHTML; } ).join( '\n' );
+					var finalHtml;
+					if ( entry.wrapCheck && entry.wrapCheck.checked ) {
+						var outerOpen = entry.sec.outerHTML.match( /^(<section[^>]*>)/i );
+						var openTag   = outerOpen ? outerOpen[1] : '<section id="' + entry.id + '">';
+						finalHtml = openTag + '\n' + innerHtml + '\n</section>';
+					} else {
+						finalHtml = innerHtml;
+					}
 
 					if ( entry.match ) {
 						entry.match.textarea.value = finalHtml;
