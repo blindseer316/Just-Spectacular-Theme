@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.8.9' );
+define( 'JST_VERSION', '1.9.0' );
 
 
 /**
@@ -575,6 +575,69 @@ function jst_output_footer_scripts() {
 	echo get_option( 'jst_footer_scripts', '' ); // phpcs:ignore -- intentional raw output, admin-trusted.
 }
 add_action( 'jst_before_closing_body', 'jst_output_footer_scripts', 20 );
+
+/**
+ * ------------------------------------------------------------------
+ * REST API: jst/v1/options
+ * GET  → returns all JST theme option values
+ * POST → updates one or more JST options; writes jst-custom.css file
+ * Auth: standard WP REST auth (Application Passwords recommended)
+ * ------------------------------------------------------------------
+ */
+function jst_rest_get_options( WP_REST_Request $request ) {
+	$keys = array_merge(
+		array_keys( jst_theme_options_fields() ),
+		array( 'jst_custom_css', 'jst_disable_tailwind_prose', 'jst_prose_invert' )
+	);
+	$data = array();
+	foreach ( $keys as $key ) {
+		$data[ $key ] = get_option( $key, '' );
+	}
+	return rest_ensure_response( $data );
+}
+
+function jst_rest_update_options( WP_REST_Request $request ) {
+	$allowed = array_merge(
+		array_keys( jst_theme_options_fields() ),
+		array( 'jst_custom_css', 'jst_disable_tailwind_prose', 'jst_prose_invert' )
+	);
+	$updated = array();
+
+	foreach ( $allowed as $key ) {
+		if ( ! $request->has_param( $key ) ) {
+			continue;
+		}
+		$value = $request->get_param( $key );
+		update_option( $key, $value );
+		$updated[] = $key;
+
+		// Write the CSS file when jst_custom_css is updated.
+		if ( 'jst_custom_css' === $key ) {
+			$upload_dir = wp_upload_dir();
+			file_put_contents( $upload_dir['basedir'] . '/jst-custom.css', $value ); // phpcs:ignore
+		}
+	}
+
+	return rest_ensure_response( array(
+		'updated' => $updated,
+		'count'   => count( $updated ),
+	) );
+}
+
+add_action( 'rest_api_init', function () {
+	register_rest_route( 'jst/v1', '/options', array(
+		array(
+			'methods'             => WP_REST_Server::READABLE,
+			'callback'            => 'jst_rest_get_options',
+			'permission_callback' => function() { return current_user_can( 'manage_options' ); },
+		),
+		array(
+			'methods'             => WP_REST_Server::EDITABLE,
+			'callback'            => 'jst_rest_update_options',
+			'permission_callback' => function() { return current_user_can( 'manage_options' ); },
+		),
+	) );
+} );
 
 /**
  * ------------------------------------------------------------------
