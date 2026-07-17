@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.9.0' );
+define( 'JST_VERSION', '1.9.1' );
 
 
 /**
@@ -550,9 +550,31 @@ function jst_output_navigation() {
 	if ( is_singular() && get_post_meta( get_the_ID(), '_jst_hide_global_nav', true ) ) {
 		return;
 	}
-	echo get_option( 'jst_navigation', '' ); // phpcs:ignore -- intentional raw output, admin-trusted.
+	echo do_shortcode( get_option( 'jst_navigation', '' ) ); // phpcs:ignore -- intentional raw output, admin-trusted.
 }
 add_action( 'wp_body_open', 'jst_output_navigation', 20 );
+
+/**
+ * [jst_menu] shortcode — renders the primary WP nav menu.
+ * Usage: [jst_menu] or [jst_menu location="primary" ul_class="flex gap-8 list-none"]
+ */
+function jst_menu_shortcode( $atts ) {
+	$atts = shortcode_atts( array(
+		'location' => 'primary',
+		'ul_class' => '',
+		'depth'    => 2,
+	), $atts, 'jst_menu' );
+
+	return wp_nav_menu( array(
+		'theme_location' => $atts['location'],
+		'menu_class'     => $atts['ul_class'],
+		'container'      => false,
+		'depth'          => (int) $atts['depth'],
+		'echo'           => false,
+		'fallback_cb'    => false,
+	) );
+}
+add_shortcode( 'jst_menu', 'jst_menu_shortcode' );
 
 /**
  * Output Footer HTML markup right before </body>, before footer scripts.
@@ -561,7 +583,7 @@ function jst_output_footer() {
 	if ( is_singular() && get_post_meta( get_the_ID(), '_jst_hide_global_footer', true ) ) {
 		return;
 	}
-	echo get_option( 'jst_footer', '' ); // phpcs:ignore -- intentional raw output, admin-trusted.
+	echo do_shortcode( get_option( 'jst_footer', '' ) ); // phpcs:ignore -- intentional raw output, admin-trusted.
 }
 add_action( 'jst_before_closing_body', 'jst_output_footer', 10 );
 
