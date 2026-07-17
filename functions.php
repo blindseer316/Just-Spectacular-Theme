@@ -561,7 +561,7 @@ add_action( 'wp_body_open', 'jst_output_navigation', 20 );
 function jst_menu_shortcode( $atts ) {
 	$atts = shortcode_atts( array(
 		'location' => 'primary',
-		'ul_class' => '',
+		'ul_class' => 'menu',
 		'depth'    => 2,
 	), $atts, 'jst_menu' );
 
