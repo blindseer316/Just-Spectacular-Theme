@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.8.8' );
+define( 'JST_VERSION', '1.8.9' );
 
 
 /**
@@ -39,6 +39,13 @@ function jst_scripts() {
 		return;
 	}
 	wp_enqueue_style( 'jst-style', get_stylesheet_uri(), array(), JST_VERSION );
+
+	// Enqueue custom CSS file from uploads if it exists and has content.
+	$upload_dir = wp_upload_dir();
+	$css_file   = $upload_dir['basedir'] . '/jst-custom.css';
+	if ( file_exists( $css_file ) && filesize( $css_file ) > 0 ) {
+		wp_enqueue_style( 'jst-custom', $upload_dir['baseurl'] . '/jst-custom.css', array( 'jst-style' ), (string) filemtime( $css_file ) );
+	}
 }
 add_action( 'wp_enqueue_scripts', 'jst_scripts' );
 
@@ -151,6 +158,14 @@ function jst_render_theme_options_page() {
 		}
 		update_option( 'jst_disable_tailwind_prose', isset( $_POST['jst_disable_tailwind_prose'] ) ? '1' : '' );
 		update_option( 'jst_prose_invert', isset( $_POST['jst_prose_invert'] ) ? '1' : '' );
+
+		// Write Custom CSS to a real file in uploads so it's enqueued as a linked stylesheet.
+		$css_content = isset( $_POST['jst_custom_css'] ) ? wp_unslash( $_POST['jst_custom_css'] ) : '';
+		update_option( 'jst_custom_css', $css_content );
+		$upload_dir = wp_upload_dir();
+		$css_file   = $upload_dir['basedir'] . '/jst-custom.css';
+		file_put_contents( $css_file, $css_content ); // phpcs:ignore -- intentional admin write.
+
 		echo '<div class="updated"><p>' . esc_html__( 'Theme options saved.', 'just-spectacular-theme' ) . '</p></div>';
 	}
 
@@ -259,6 +274,12 @@ function jst_render_theme_options_page() {
 						</p>
 						<p><span class="description"><?php echo esc_html( $field['description'] ); ?></span></p>
 					<?php endforeach; ?>
+
+					<h2><?php esc_html_e( 'Custom CSS', 'just-spectacular-theme' ); ?></h2>
+					<p><span class="description"><?php esc_html_e( 'Saved as /wp-content/uploads/jst-custom.css and enqueued as a linked stylesheet — not inline. Version-busted automatically on every save. Use for nav, footer, and any per-client CSS that doesn\'t belong in Header Scripts.', 'just-spectacular-theme' ); ?></span></p>
+					<p>
+						<textarea id="jst_custom_css" name="jst_custom_css" rows="18" class="jst-metabox-field" style="width:100%;font-family:monospace;"><?php echo esc_textarea( get_option( 'jst_custom_css', '' ) ); ?></textarea>
+					</p>
 
 					<h2><?php esc_html_e( 'Content Styling', 'just-spectacular-theme' ); ?></h2>
 					<p>
