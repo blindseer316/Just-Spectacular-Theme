@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.9.2' );
+define( 'JST_VERSION', '1.9.3' );
 
 
 /**
