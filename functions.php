@@ -125,7 +125,7 @@ function jst_theme_options_fields() {
 	return array(
 		'jst_navigation'     => array(
 			'label'       => __( 'Header Nav / Menu', 'just-spectacular-theme' ),
-			'description' => __( 'Outputs at the very start of <body> via wp_body_open — use for your global header and navigation markup.', 'just-spectacular-theme' ),
+			'description' => __( 'Outputs at the very start of &lt;body&gt; via wp_body_open — use for your global header and navigation markup. Shortcodes: [jst_menu] renders the WordPress primary nav menu (supports location, ul_class, depth attributes).', 'just-spectacular-theme' ),
 		),
 		'jst_footer'         => array(
 			'label'       => __( 'Footer HTML', 'just-spectacular-theme' ),
@@ -388,9 +388,18 @@ function jst_render_theme_options_page() {
 			var topbarEl = ( navEl && ! navEl.matches( '[id*="topbar"],[class*="topbar"]' ) )
 				? doc.querySelector( '[id*="topbar"],[class*="topbar"]' )
 				: null;
+			// Also grab mobile drawer/menu siblings adjacent to the header.
+			var mobileDrawer = (
+				doc.querySelector( '[id*="mobile-drawer"],[class*="mobile-drawer"]' ) ||
+				doc.querySelector( '[id*="mobile-menu"],[class*="mobile-menu"]' ) ||
+				doc.querySelector( '[id*="drawer"],[class*="drawer"]' )
+			);
+			// Don't double-add if already inside navEl.
+			if ( mobileDrawer && navEl && navEl.contains( mobileDrawer ) ) { mobileDrawer = null; }
 			var navHtml = '';
-			if ( topbarEl ) { navHtml += topbarEl.outerHTML + '\n'; }
-			if ( navEl    ) { navHtml += navEl.outerHTML; }
+			if ( topbarEl    ) { navHtml += topbarEl.outerHTML + '\n'; }
+			if ( navEl       ) { navHtml += navEl.outerHTML; }
+			if ( mobileDrawer) { navHtml += '\n' + mobileDrawer.outerHTML; }
 			navHtml = navHtml.trim();
 			extracted['jst_navigation'] = navHtml;
 
@@ -414,13 +423,14 @@ function jst_render_theme_options_page() {
 			var stickyCta = (
 				doc.querySelector( '#cta-sticky-mobile' ) ||
 				doc.querySelector( '.cta-sticky-mobile' ) ||
-				doc.querySelector( '[class*="sticky-cta"],[class*="cta-sticky"],[id*="sticky-cta"],[id*="cta-sticky"]' )
+				doc.querySelector( '[class*="sticky-cta"],[class*="cta-sticky"],[id*="sticky-cta"],[id*="cta-sticky"]' ) ||
+				doc.querySelector( '[class*="sticky"][class*="cta"],[id*="sticky"][id*="cta"]' )
 			);
 			var footerHtml = '';
 			// If sticky CTA is inside the footer don't double-add it.
 			if ( stickyCta && footerEl && footerEl.contains( stickyCta ) ) { stickyCta = null; }
-			if ( stickyCta ) { footerHtml += stickyCta.outerHTML + '\n'; }
 			if ( footerEl  ) { footerHtml += footerEl.outerHTML; }
+			if ( stickyCta ) { footerHtml += '\n' + stickyCta.outerHTML; }
 			extracted['jst_footer'] = footerHtml.trim();
 
 			// --- 4. Footer Scripts ---
