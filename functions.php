@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.9.4' );
+define( 'JST_VERSION', '1.9.5' );
 
 
 /**
@@ -372,6 +372,14 @@ function jst_render_theme_options_page() {
 
 			var doc = ( new DOMParser() ).parseFromString( raw, 'text/html' );
 
+			// Returns the nearest preceding HTML comment for an element, if any.
+			function precedingComment( el ) {
+				if ( ! el ) { return ''; }
+				var sib = el.previousSibling;
+				while ( sib && sib.nodeType === 3 && sib.textContent.trim() === '' ) { sib = sib.previousSibling; }
+				return ( sib && sib.nodeType === 8 ) ? '<!-- ' + sib.nodeValue.trim() + ' -->\n' : '';
+			}
+
 			// --- 1. Nav / Header ---
 			// Look for: <header id="site-nav">, <header id="nav">, <div id="topbar">,
 			// <section id="nav">, <nav>, any element with id/class containing "topbar".
@@ -396,9 +404,9 @@ function jst_render_theme_options_page() {
 			// Don't double-add if already inside navEl.
 			if ( mobileDrawer && navEl && navEl.contains( mobileDrawer ) ) { mobileDrawer = null; }
 			var navHtml = '';
-			if ( topbarEl    ) { navHtml += topbarEl.outerHTML + '\n'; }
-			if ( navEl       ) { navHtml += navEl.outerHTML; }
-			if ( mobileDrawer) { navHtml += '\n' + mobileDrawer.outerHTML; }
+			if ( topbarEl    ) { navHtml += precedingComment( topbarEl )    + topbarEl.outerHTML    + '\n'; }
+			if ( navEl       ) { navHtml += precedingComment( navEl )       + navEl.outerHTML       + '\n'; }
+			if ( mobileDrawer) { navHtml += precedingComment( mobileDrawer ) + mobileDrawer.outerHTML; }
 			navHtml = navHtml.trim();
 			extracted['jst_navigation'] = navHtml;
 
@@ -437,8 +445,8 @@ function jst_render_theme_options_page() {
 			var footerHtml = '';
 			// If sticky CTA is inside the footer don't double-add it.
 			if ( stickyCta && footerEl && footerEl.contains( stickyCta ) ) { stickyCta = null; }
-			if ( footerEl  ) { footerHtml += footerEl.outerHTML; }
-			if ( stickyCta ) { footerHtml += '\n' + stickyCta.outerHTML; }
+			if ( footerEl  ) { footerHtml += precedingComment( footerEl )  + footerEl.outerHTML; }
+			if ( stickyCta ) { footerHtml += '\n' + precedingComment( stickyCta ) + stickyCta.outerHTML; }
 			extracted['jst_footer'] = footerHtml.trim();
 
 			// --- 4. Footer Scripts ---
