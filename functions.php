@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.9.3' );
+define( 'JST_VERSION', '1.9.4' );
 
 
 /**
@@ -381,7 +381,6 @@ function jst_render_theme_options_page() {
 				doc.querySelector( '[id="topbar"]' ) ||
 				doc.querySelector( '[class*="topbar"]' ) ||
 				doc.querySelector( 'section[id*="nav"]' ) ||
-				doc.querySelector( 'nav' ) ||
 				doc.querySelector( 'header' )
 			);
 			// Also grab a topbar sibling if it exists separately.
@@ -424,8 +423,17 @@ function jst_render_theme_options_page() {
 				doc.querySelector( '#cta-sticky-mobile' ) ||
 				doc.querySelector( '.cta-sticky-mobile' ) ||
 				doc.querySelector( '[class*="sticky-cta"],[class*="cta-sticky"],[id*="sticky-cta"],[id*="cta-sticky"]' ) ||
+				doc.querySelector( '[role="complementary"][aria-label*="contact" i],[role="complementary"][aria-label*="cta" i]' ) ||
+				doc.querySelector( '[class*="mobile-bar"],[id*="mobile-bar"]' ) ||
 				doc.querySelector( '[class*="sticky"][class*="cta"],[id*="sticky"][id*="cta"]' )
 			);
+			// Walk up if we landed on a button/anchor instead of the wrapper container.
+			if ( stickyCta && ( stickyCta.tagName === 'BUTTON' || stickyCta.tagName === 'A' ) ) {
+				var stickyParent = stickyCta.parentElement;
+				if ( stickyParent && stickyParent.tagName !== 'BODY' && stickyParent.tagName !== 'MAIN' && ! ( footerEl && footerEl.contains( stickyParent ) ) ) {
+					stickyCta = stickyParent;
+				}
+			}
 			var footerHtml = '';
 			// If sticky CTA is inside the footer don't double-add it.
 			if ( stickyCta && footerEl && footerEl.contains( stickyCta ) ) { stickyCta = null; }
