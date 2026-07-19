@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.9.7' );
+define( 'JST_VERSION', '1.9.8' );
 
 
 /**
@@ -283,9 +283,30 @@ function jst_render_theme_options_page() {
 	.jst-import-card-body select { width: 100%; font-size: 12px; padding: 4px 6px; box-sizing: border-box; }
 	.jst-import-card-body .jst-title-row { grid-column: 1 / -1; }
 	.jst-import-card-foot { padding: 8px 12px; border-top: 1px solid #f0f0f1; display: flex; align-items: center; gap: 8px; }
-	.jst-import-status { font-size: 11px; }
-	.jst-import-status.ok  { color: #0a3622; }
-	.jst-import-status.err { color: #8a1a1a; }
+	/* Import tab two-column layout */
+	#jst-import-columns { display: flex; gap: 20px; align-items: flex-start; }
+	#jst-import-left {
+		width: 380px; flex-shrink: 0;
+		position: sticky; top: 32px;
+		max-height: calc(100vh - 60px); overflow-y: auto;
+	}
+	#jst-import-right { flex: 1; min-width: 0; }
+	/* Output log */
+	#jst-import-output {
+		background: #f6f7f7; border: 1px solid #dcdcde; border-radius: 4px;
+		padding: 12px; min-height: 120px;
+	}
+	#jst-import-output h3 { margin: 0 0 10px; font-size: 13px; font-weight: 600; color: #1d2327; }
+	.jst-out-row {
+		display: flex; align-items: baseline; gap: 8px;
+		padding: 6px 0; border-bottom: 1px solid #f0f0f1; font-size: 12px;
+	}
+	.jst-out-row:last-child { border-bottom: none; }
+	.jst-out-icon { font-size: 14px; flex-shrink: 0; }
+	.jst-out-title { font-weight: 600; color: #1d2327; flex: 1; }
+	.jst-out-links a { font-size: 11px; margin-left: 6px; }
+	.jst-out-err { color: #8a1a1a; font-size: 11px; }
+	.jst-out-pending { color: #646970; font-size: 11px; font-style: italic; }
 	</style>
 
 	<?php
@@ -400,23 +421,36 @@ function jst_render_theme_options_page() {
 		</div><!-- #jst-tab-options -->
 
 		<div id="jst-tab-import" class="jst-tab-panel" style="padding-top:16px;">
-			<div style="max-width:760px;">
-				<div id="jst-import-dropzone">
-					<p style="font-size:15px;font-weight:600;color:#1d2327;"><?php esc_html_e( 'Drop HTML files here', 'just-spectacular-theme' ); ?></p>
-					<p><?php esc_html_e( 'or', 'just-spectacular-theme' ); ?></p>
-					<label class="button button-primary" style="cursor:pointer;">
-						<?php esc_html_e( 'Choose Files', 'just-spectacular-theme' ); ?>
-						<input type="file" id="jst-import-file-input" accept=".html,text/html" multiple style="display:none;">
-					</label>
-					<p style="margin-top:10px;font-size:11px;"><?php esc_html_e( 'Strips header, footer, mobile drawer, scripts — keeps page body sections.', 'just-spectacular-theme' ); ?></p>
+			<div id="jst-import-columns">
+
+				<!-- Left: upload + cards (sticky) -->
+				<div id="jst-import-left">
+					<div id="jst-import-dropzone">
+						<p style="font-size:15px;font-weight:600;color:#1d2327;"><?php esc_html_e( 'Drop HTML files here', 'just-spectacular-theme' ); ?></p>
+						<p><?php esc_html_e( 'or', 'just-spectacular-theme' ); ?></p>
+						<label class="button button-primary" style="cursor:pointer;">
+							<?php esc_html_e( 'Choose Files', 'just-spectacular-theme' ); ?>
+							<input type="file" id="jst-import-file-input" accept=".html,text/html" multiple style="display:none;">
+						</label>
+						<p style="margin-top:10px;font-size:11px;"><?php esc_html_e( 'Strips header, footer, mobile drawer, scripts — keeps page body sections.', 'just-spectacular-theme' ); ?></p>
+					</div>
+
+					<div id="jst-import-bulk-actions" style="display:none;margin-bottom:12px;align-items:center;gap:8px;">
+						<button type="button" id="jst-import-create-all" class="button button-primary"><?php esc_html_e( 'Create All', 'just-spectacular-theme' ); ?></button>
+						<span id="jst-import-bulk-status" style="font-size:12px;color:#646970;"></span>
+					</div>
+
+					<div id="jst-import-cards"></div>
 				</div>
 
-				<div id="jst-import-bulk-actions" style="display:none;margin-bottom:12px;align-items:center;gap:8px;">
-					<button type="button" id="jst-import-create-all" class="button button-primary"><?php esc_html_e( 'Create All', 'just-spectacular-theme' ); ?></button>
-					<span id="jst-import-bulk-status" style="font-size:12px;color:#646970;"></span>
+				<!-- Right: output log -->
+				<div id="jst-import-right">
+					<div id="jst-import-output">
+						<h3><?php esc_html_e( 'Output', 'just-spectacular-theme' ); ?></h3>
+						<p class="jst-out-pending"><?php esc_html_e( 'Created pages will appear here.', 'just-spectacular-theme' ); ?></p>
+					</div>
 				</div>
 
-				<div id="jst-import-cards"></div>
 			</div>
 		</div><!-- #jst-tab-import -->
 
@@ -645,6 +679,8 @@ function jst_render_theme_options_page() {
 		var cardsEl    = document.getElementById( 'jst-import-cards' );
 		var bulkBar    = document.getElementById( 'jst-import-bulk-actions' );
 		var bulkStatus = document.getElementById( 'jst-import-bulk-status' );
+		var outputEl   = document.getElementById( 'jst-import-output' );
+		var bulkTotal = 0, bulkDone = 0;
 
 		// Drag-and-drop on dropzone.
 		dropzone.addEventListener( 'dragover',  function(e) { e.preventDefault(); dropzone.classList.add( 'jst-drop-over' ); } );
@@ -724,11 +760,10 @@ function jst_render_theme_options_page() {
 					'</label>' +
 					'<label>Post Type<select class="jst-imp-pt">' + ptOptions + '</select></label>' +
 					'<label>Template<select class="jst-imp-tpl">' + tplOptions + '</select></label>' +
-					'<label>Status<select class="jst-imp-status"><option value="draft" selected>Draft</option><option value="publish">Publish</option></select></label>' +
+					'<label>Status<select class="jst-imp-status"><option value="publish" selected>Publish</option><option value="draft">Draft</option></select></label>' +
 				'</div>' +
 				'<div class="jst-import-card-foot">' +
 					'<button type="button" class="button button-primary jst-imp-create-btn">Create Page</button>' +
-					'<span class="jst-import-status"></span>' +
 				'</div>';
 
 			card._jstContent = content;
@@ -740,9 +775,42 @@ function jst_render_theme_options_page() {
 			cardsEl.appendChild( card );
 		}
 
-		function createPage( card ) {
+		function outputRow( title, ok, data ) {
+			// Clear placeholder on first result.
+			var placeholder = outputEl.querySelector( '.jst-out-pending' );
+			if ( placeholder ) { placeholder.remove(); }
+
+			var row = document.createElement( 'div' );
+			row.className = 'jst-out-row';
+
+			if ( ok ) {
+				var editHref = jstRestUrl.replace( /\/wp-json\/?$/, '' ) + '/wp-admin/post.php?post=' + data.id + '&action=edit';
+				row.innerHTML =
+					'<span class="jst-out-icon">✓</span>' +
+					'<span class="jst-out-title">' + title + '</span>' +
+					'<span class="jst-out-links">' +
+						'<a href="' + ( data.link || '#' ) + '" target="_blank">View</a>' +
+						'<a href="' + editHref + '" target="_blank">Edit</a>' +
+					'</span>';
+			} else {
+				row.innerHTML =
+					'<span class="jst-out-icon">✗</span>' +
+					'<span class="jst-out-title">' + title + '</span>' +
+					'<span class="jst-out-err">' + ( data.message || 'Error' ) + '</span>';
+			}
+			outputEl.appendChild( row );
+		}
+
+		function updateBulkStatus() {
+			if ( bulkTotal === 0 ) { return; }
+			bulkStatus.textContent = bulkDone + ' / ' + bulkTotal + ' done';
+			if ( bulkDone === bulkTotal ) {
+				bulkStatus.textContent = '✓ All ' + bulkTotal + ' page' + ( bulkTotal !== 1 ? 's' : '' ) + ' created';
+			}
+		}
+
+		function createPage( card, isBulk ) {
 			var btn     = card.querySelector( '.jst-imp-create-btn' );
-			var statusEl= card.querySelector( '.jst-import-status' );
 			var title   = card.querySelector( '.jst-imp-title' ).value.trim();
 			var pt      = card.querySelector( '.jst-imp-pt' ).value;
 			var tpl     = card.querySelector( '.jst-imp-tpl' ).value;
@@ -754,66 +822,43 @@ function jst_render_theme_options_page() {
 
 			btn.disabled    = true;
 			btn.textContent = 'Creating…';
-			statusEl.textContent = '';
-			statusEl.className   = 'jst-import-status';
 
 			fetch( endpoint, {
 				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					'X-WP-Nonce':   jstRestNonce,
-				},
-				body: JSON.stringify( {
-					title:    title,
-					content:  content,
-					status:   status,
-					template: tpl,
-				} ),
+				headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': jstRestNonce },
+				body: JSON.stringify( { title: title, content: content, status: status, template: tpl } ),
 			} )
-			.then( function( res ) { return res.json().then( function( data ) { return { ok: res.ok, data: data }; } ); } )
+			.then( function( res ) { return res.json().then( function( d ) { return { ok: res.ok, data: d }; } ); } )
 			.then( function( r ) {
 				if ( r.ok ) {
-					statusEl.textContent = '✓ Created — ID ' + r.data.id;
-					statusEl.className   = 'jst-import-status ok';
-					btn.textContent = 'Created';
-					var editLink = document.createElement( 'a' );
-					editLink.href   = r.data.link ? r.data.link : '#';
-					editLink.target = '_blank';
-					editLink.style  = 'margin-left:8px;font-size:11px;';
-					editLink.textContent = 'View →';
-					card.querySelector( '.jst-import-card-foot' ).appendChild( editLink );
-					// Also add edit link.
-					if ( r.data.id ) {
-						var editA = document.createElement( 'a' );
-						editA.href   = jstRestUrl.replace( '/wp-json/', '/wp-admin/post.php?post=' + r.data.id + '&action=edit' );
-						editA.target = '_blank';
-						editA.style  = 'font-size:11px;';
-						editA.textContent = 'Edit →';
-						card.querySelector( '.jst-import-card-foot' ).appendChild( editA );
-					}
+					btn.textContent = '✓ Done';
+					outputRow( title, true, r.data );
 				} else {
-					statusEl.textContent = '✗ ' + ( r.data.message || 'Error' );
-					statusEl.className   = 'jst-import-status err';
 					btn.disabled    = false;
 					btn.textContent = 'Retry';
+					outputRow( title, false, r.data );
 				}
+				if ( isBulk ) { bulkDone++; updateBulkStatus(); }
 			} )
 			.catch( function( err ) {
-				statusEl.textContent = '✗ ' + err.message;
-				statusEl.className   = 'jst-import-status err';
 				btn.disabled    = false;
 				btn.textContent = 'Retry';
+				outputRow( title, false, { message: err.message } );
+				if ( isBulk ) { bulkDone++; updateBulkStatus(); }
 			} );
 		}
 
 		document.getElementById( 'jst-import-create-all' ).addEventListener( 'click', function() {
 			var cards = cardsEl.querySelectorAll( '.jst-import-card' );
-			var pending = 0;
+			var pending = [];
 			cards.forEach( function( card ) {
-				var btn = card.querySelector( '.jst-imp-create-btn' );
-				if ( ! btn.disabled ) { pending++; createPage( card ); }
+				if ( ! card.querySelector( '.jst-imp-create-btn' ).disabled ) { pending.push( card ); }
 			} );
-			bulkStatus.textContent = 'Creating ' + pending + ' page' + ( pending !== 1 ? 's' : '' ) + '…';
+			if ( ! pending.length ) { return; }
+			bulkTotal = pending.length;
+			bulkDone  = 0;
+			bulkStatus.textContent = '0 / ' + bulkTotal + ' done';
+			pending.forEach( function( card ) { createPage( card, true ); } );
 		} );
 	} )();
 	</script>
