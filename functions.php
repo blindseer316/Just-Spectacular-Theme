@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.9.5' );
+define( 'JST_VERSION', '1.9.6' );
 
 
 /**
@@ -246,10 +246,74 @@ function jst_render_theme_options_page() {
 	}
 	.jst-opts-badge.found  { background: #d1e7dd; color: #0a3622; }
 	.jst-opts-badge.empty  { background: #f8d7da; color: #58151c; }
+
+	/* Tabs */
+	#jst-tab-nav { display:flex; gap:0; margin: 12px 0 0; border-bottom: 2px solid #dcdcde; }
+	.jst-tab-btn {
+		background: none; border: none; border-bottom: 2px solid transparent;
+		margin-bottom: -2px; padding: 8px 16px; font-size: 14px; font-weight: 600;
+		color: #646970; cursor: pointer;
+	}
+	.jst-tab-btn:hover { color: #1d2327; }
+	.jst-tab-btn.jst-tab-active { color: #1d2327; border-bottom-color: #2271b1; }
+	.jst-tab-panel { display: none; }
+	.jst-tab-panel.jst-tab-visible { display: block; }
+
+	/* Import Templates tab */
+	#jst-import-dropzone {
+		border: 2px dashed #c3c4c7; border-radius: 6px; padding: 32px;
+		text-align: center; cursor: pointer; transition: border-color 0.15s;
+		margin-bottom: 16px;
+	}
+	#jst-import-dropzone.jst-drop-over { border-color: #2271b1; background: #f0f6fc; }
+	#jst-import-dropzone p { margin: 6px 0; color: #646970; font-size: 13px; }
+	.jst-import-card {
+		background: #fff; border: 1px solid #dcdcde; border-radius: 4px;
+		margin-bottom: 12px; overflow: hidden;
+	}
+	.jst-import-card-head {
+		display: flex; align-items: center; gap: 10px;
+		padding: 10px 12px; background: #f6f7f7;
+		border-bottom: 1px solid #dcdcde; font-size: 12px; font-weight: 600;
+	}
+	.jst-import-card-head .jst-file-name { flex: 1; color: #1d2327; }
+	.jst-import-card-body { padding: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+	.jst-import-card-body label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: #646970; }
+	.jst-import-card-body input[type="text"],
+	.jst-import-card-body select { width: 100%; font-size: 12px; padding: 4px 6px; box-sizing: border-box; }
+	.jst-import-card-body .jst-title-row { grid-column: 1 / -1; }
+	.jst-import-card-foot { padding: 8px 12px; border-top: 1px solid #f0f0f1; display: flex; align-items: center; gap: 8px; }
+	.jst-import-status { font-size: 11px; }
+	.jst-import-status.ok  { color: #0a3622; }
+	.jst-import-status.err { color: #8a1a1a; }
 	</style>
 
+	<?php
+	// Post types available for import (public + REST-enabled, no attachments).
+	$jst_import_pts = get_post_types( array( 'public' => true, 'show_in_rest' => true ), 'objects' );
+	unset( $jst_import_pts['attachment'] );
+	$jst_pt_map = array();
+	foreach ( $jst_import_pts as $pt ) {
+		$jst_pt_map[ $pt->name ] = array(
+			'label'     => $pt->labels->singular_name,
+			'rest_base' => $pt->rest_base ?: $pt->name,
+		);
+	}
+	// Templates registered in this theme.
+	$jst_templates = array_merge(
+		array( '' => 'Default' ),
+		wp_get_theme()->get_page_templates()
+	);
+	?>
 	<div class="wrap">
 		<h1><?php esc_html_e( 'Theme Options', 'just-spectacular-theme' ); ?></h1>
+
+		<div id="jst-tab-nav">
+			<button type="button" class="jst-tab-btn jst-tab-active" data-tab="jst-tab-options"><?php esc_html_e( 'Theme Options', 'just-spectacular-theme' ); ?></button>
+			<button type="button" class="jst-tab-btn" data-tab="jst-tab-import"><?php esc_html_e( 'Import Templates', 'just-spectacular-theme' ); ?></button>
+		</div>
+
+		<div id="jst-tab-options" class="jst-tab-panel jst-tab-visible">
 		<form method="post" action="" id="jst-opts-form">
 			<?php wp_nonce_field( 'jst_save_theme_options', 'jst_theme_options_nonce' ); ?>
 
@@ -333,8 +397,37 @@ function jst_render_theme_options_page() {
 
 			</div><!-- #jst-options-columns -->
 		</form>
-	</div>
+		</div><!-- #jst-tab-options -->
 
+		<div id="jst-tab-import" class="jst-tab-panel" style="padding-top:16px;">
+			<div style="max-width:760px;">
+				<div id="jst-import-dropzone">
+					<p style="font-size:15px;font-weight:600;color:#1d2327;"><?php esc_html_e( 'Drop HTML files here', 'just-spectacular-theme' ); ?></p>
+					<p><?php esc_html_e( 'or', 'just-spectacular-theme' ); ?></p>
+					<label class="button button-primary" style="cursor:pointer;">
+						<?php esc_html_e( 'Choose Files', 'just-spectacular-theme' ); ?>
+						<input type="file" id="jst-import-file-input" accept=".html,text/html" multiple style="display:none;">
+					</label>
+					<p style="margin-top:10px;font-size:11px;"><?php esc_html_e( 'Strips header, footer, mobile drawer, scripts — keeps page body sections.', 'just-spectacular-theme' ); ?></p>
+				</div>
+
+				<div id="jst-import-bulk-actions" style="display:none;margin-bottom:12px;display:none;align-items:center;gap:8px;">
+					<button type="button" id="jst-import-create-all" class="button button-primary"><?php esc_html_e( 'Create All', 'just-spectacular-theme' ); ?></button>
+					<span id="jst-import-bulk-status" style="font-size:12px;color:#646970;"></span>
+				</div>
+
+				<div id="jst-import-cards"></div>
+			</div>
+		</div><!-- #jst-tab-import -->
+
+	</div><!-- .wrap -->
+
+	<script>
+	var jstRestNonce = <?php echo wp_json_encode( wp_create_nonce( 'wp_rest' ) ); ?>;
+	var jstRestUrl   = <?php echo wp_json_encode( rest_url() ); ?>;
+	var jstPtMap     = <?php echo wp_json_encode( $jst_pt_map ); ?>;
+	var jstTemplates = <?php echo wp_json_encode( $jst_templates ); ?>;
+	</script>
 	<script>
 	( function() {
 		var fileInput = document.getElementById( 'jst-opts-file' );
@@ -527,6 +620,192 @@ function jst_render_theme_options_page() {
 			} );
 
 			applyStatus.textContent = applied + ' field' + ( applied !== 1 ? 's' : '' ) + ' applied — hit Save Options to commit.';
+		} );
+	} )();
+
+	// ── Tab switching ────────────────────────────────────────────────────────
+	( function() {
+		var btns   = document.querySelectorAll( '.jst-tab-btn' );
+		var panels = document.querySelectorAll( '.jst-tab-panel' );
+		btns.forEach( function( btn ) {
+			btn.addEventListener( 'click', function() {
+				btns.forEach( function( b ) { b.classList.remove( 'jst-tab-active' ); } );
+				panels.forEach( function( p ) { p.classList.remove( 'jst-tab-visible' ); } );
+				btn.classList.add( 'jst-tab-active' );
+				var target = document.getElementById( btn.dataset.tab );
+				if ( target ) { target.classList.add( 'jst-tab-visible' ); }
+			} );
+		} );
+	} )();
+
+	// ── Import Templates tab ─────────────────────────────────────────────────
+	( function() {
+		var dropzone   = document.getElementById( 'jst-import-dropzone' );
+		var fileInput  = document.getElementById( 'jst-import-file-input' );
+		var cardsEl    = document.getElementById( 'jst-import-cards' );
+		var bulkBar    = document.getElementById( 'jst-import-bulk-actions' );
+		var bulkStatus = document.getElementById( 'jst-import-bulk-status' );
+
+		// Drag-and-drop on dropzone.
+		dropzone.addEventListener( 'dragover',  function(e) { e.preventDefault(); dropzone.classList.add( 'jst-drop-over' ); } );
+		dropzone.addEventListener( 'dragleave', function()  { dropzone.classList.remove( 'jst-drop-over' ); } );
+		dropzone.addEventListener( 'drop', function(e) {
+			e.preventDefault();
+			dropzone.classList.remove( 'jst-drop-over' );
+			handleFiles( e.dataTransfer.files );
+		} );
+		fileInput.addEventListener( 'change', function() { handleFiles( fileInput.files ); } );
+
+		function handleFiles( files ) {
+			if ( ! files || ! files.length ) { return; }
+			Array.from( files ).forEach( function( file ) {
+				var reader = new FileReader();
+				reader.onload = function( ev ) { addCard( file.name, ev.target.result ); };
+				reader.readAsText( file );
+			} );
+			if ( files.length > 1 ) { bulkBar.style.display = 'flex'; }
+		}
+
+		function extractPageContent( doc ) {
+			var clone = doc.cloneNode( true );
+			var body  = clone.body;
+			if ( ! body ) { return ''; }
+			var toRemove = [
+				'header', 'footer',
+				'[id*="mobile-drawer"],[class*="mobile-drawer"]',
+				'[id*="mobile-menu"],[class*="mobile-menu"]',
+				'[id*="drawer"],[class*="drawer"]',
+				'[role="complementary"]',
+				'#cta-sticky-mobile', '.cta-sticky-mobile',
+				'[class*="sticky-cta"],[class*="cta-sticky"],[id*="sticky-cta"],[id*="cta-sticky"]',
+				'[class*="mobile-bar"],[id*="mobile-bar"]',
+				'script', 'noscript'
+			];
+			toRemove.forEach( function( sel ) {
+				try { body.querySelectorAll( sel ).forEach( function( el ) { el.remove(); } ); } catch(e) {}
+			} );
+			return body.innerHTML.trim();
+		}
+
+		function addCard( filename, raw ) {
+			var doc     = ( new DOMParser() ).parseFromString( raw, 'text/html' );
+			var title   = ( doc.querySelector( 'title' ) || {} ).textContent || filename.replace( /\.html?$/i, '' );
+			var content = extractPageContent( doc );
+
+			var card = document.createElement( 'div' );
+			card.className = 'jst-import-card';
+
+			// Build post type options.
+			var ptOptions = Object.keys( jstPtMap ).map( function( k ) {
+				return '<option value="' + k + '"' + ( k === 'page' ? ' selected' : '' ) + '>' + jstPtMap[ k ].label + '</option>';
+			} ).join( '' );
+
+			// Build template options.
+			var tplOptions = Object.keys( jstTemplates ).map( function( k ) {
+				var selected = ( k === 'template-full-width.php' ) ? ' selected' : '';
+				return '<option value="' + k + '"' + selected + '>' + jstTemplates[ k ] + '</option>';
+			} ).join( '' );
+
+			card.innerHTML =
+				'<div class="jst-import-card-head">' +
+					'<span class="jst-file-name">' + filename + '</span>' +
+				'</div>' +
+				'<div class="jst-import-card-body">' +
+					'<label class="jst-title-row">Page Title' +
+						'<input type="text" class="jst-imp-title" value="' + title.replace( /"/g, '&quot;' ) + '">' +
+					'</label>' +
+					'<label>Post Type<select class="jst-imp-pt">' + ptOptions + '</select></label>' +
+					'<label>Template<select class="jst-imp-tpl">' + tplOptions + '</select></label>' +
+					'<label>Status<select class="jst-imp-status"><option value="draft" selected>Draft</option><option value="publish">Publish</option></select></label>' +
+				'</div>' +
+				'<div class="jst-import-card-foot">' +
+					'<button type="button" class="button button-primary jst-imp-create-btn">Create Page</button>' +
+					'<span class="jst-import-status"></span>' +
+				'</div>';
+
+			card._jstContent = content;
+
+			card.querySelector( '.jst-imp-create-btn' ).addEventListener( 'click', function() {
+				createPage( card );
+			} );
+
+			cardsEl.appendChild( card );
+		}
+
+		function createPage( card ) {
+			var btn     = card.querySelector( '.jst-imp-create-btn' );
+			var statusEl= card.querySelector( '.jst-import-status' );
+			var title   = card.querySelector( '.jst-imp-title' ).value.trim();
+			var pt      = card.querySelector( '.jst-imp-pt' ).value;
+			var tpl     = card.querySelector( '.jst-imp-tpl' ).value;
+			var status  = card.querySelector( '.jst-imp-status' ).value;
+			var content = card._jstContent;
+
+			var restBase = jstPtMap[ pt ] ? jstPtMap[ pt ].rest_base : 'pages';
+			var endpoint = jstRestUrl + 'wp/v2/' + restBase;
+
+			btn.disabled    = true;
+			btn.textContent = 'Creating…';
+			statusEl.textContent = '';
+			statusEl.className   = 'jst-import-status';
+
+			fetch( endpoint, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'X-WP-Nonce':   jstRestNonce,
+				},
+				body: JSON.stringify( {
+					title:    title,
+					content:  content,
+					status:   status,
+					template: tpl,
+				} ),
+			} )
+			.then( function( res ) { return res.json().then( function( data ) { return { ok: res.ok, data: data }; } ); } )
+			.then( function( r ) {
+				if ( r.ok ) {
+					statusEl.textContent = '✓ Created — ID ' + r.data.id;
+					statusEl.className   = 'jst-import-status ok';
+					btn.textContent = 'Created';
+					var editLink = document.createElement( 'a' );
+					editLink.href   = r.data.link ? r.data.link : '#';
+					editLink.target = '_blank';
+					editLink.style  = 'margin-left:8px;font-size:11px;';
+					editLink.textContent = 'View →';
+					card.querySelector( '.jst-import-card-foot' ).appendChild( editLink );
+					// Also add edit link.
+					if ( r.data.id ) {
+						var editA = document.createElement( 'a' );
+						editA.href   = jstRestUrl.replace( '/wp-json/', '/wp-admin/post.php?post=' + r.data.id + '&action=edit' );
+						editA.target = '_blank';
+						editA.style  = 'font-size:11px;';
+						editA.textContent = 'Edit →';
+						card.querySelector( '.jst-import-card-foot' ).appendChild( editA );
+					}
+				} else {
+					statusEl.textContent = '✗ ' + ( r.data.message || 'Error' );
+					statusEl.className   = 'jst-import-status err';
+					btn.disabled    = false;
+					btn.textContent = 'Retry';
+				}
+			} )
+			.catch( function( err ) {
+				statusEl.textContent = '✗ ' + err.message;
+				statusEl.className   = 'jst-import-status err';
+				btn.disabled    = false;
+				btn.textContent = 'Retry';
+			} );
+		}
+
+		document.getElementById( 'jst-import-create-all' ).addEventListener( 'click', function() {
+			var cards = cardsEl.querySelectorAll( '.jst-import-card' );
+			var pending = 0;
+			cards.forEach( function( card ) {
+				var btn = card.querySelector( '.jst-imp-create-btn' );
+				if ( ! btn.disabled ) { pending++; createPage( card ); }
+			} );
+			bulkStatus.textContent = 'Creating ' + pending + ' page' + ( pending !== 1 ? 's' : '' ) + '…';
 		} );
 	} )();
 	</script>
