@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.9.6' );
+define( 'JST_VERSION', '1.9.7' );
 
 
 /**
@@ -411,7 +411,7 @@ function jst_render_theme_options_page() {
 					<p style="margin-top:10px;font-size:11px;"><?php esc_html_e( 'Strips header, footer, mobile drawer, scripts — keeps page body sections.', 'just-spectacular-theme' ); ?></p>
 				</div>
 
-				<div id="jst-import-bulk-actions" style="display:none;margin-bottom:12px;display:none;align-items:center;gap:8px;">
+				<div id="jst-import-bulk-actions" style="display:none;margin-bottom:12px;align-items:center;gap:8px;">
 					<button type="button" id="jst-import-create-all" class="button button-primary"><?php esc_html_e( 'Create All', 'just-spectacular-theme' ); ?></button>
 					<span id="jst-import-bulk-status" style="font-size:12px;color:#646970;"></span>
 				</div>
@@ -663,7 +663,7 @@ function jst_render_theme_options_page() {
 				reader.onload = function( ev ) { addCard( file.name, ev.target.result ); };
 				reader.readAsText( file );
 			} );
-			if ( files.length > 1 ) { bulkBar.style.display = 'flex'; }
+			bulkBar.style.display = 'flex';
 		}
 
 		function extractPageContent( doc ) {
@@ -684,7 +684,15 @@ function jst_render_theme_options_page() {
 			toRemove.forEach( function( sel ) {
 				try { body.querySelectorAll( sel ).forEach( function( el ) { el.remove(); } ); } catch(e) {}
 			} );
-			return body.innerHTML.trim();
+			// Strip HTML comment nodes left behind after element removal.
+			var walker = clone.createTreeWalker( body, NodeFilter.SHOW_COMMENT, null, false );
+			var commentNodes = [];
+			var n;
+			while ( ( n = walker.nextNode() ) ) { commentNodes.push( n ); }
+			commentNodes.forEach( function( c ) { c.parentNode.removeChild( c ); } );
+			// Wrap in Gutenberg HTML block so WP stores it as raw HTML, not classic editor.
+			var inner = body.innerHTML.trim();
+			return inner ? '<!-- wp:html -->\n' + inner + '\n<!-- /wp:html -->' : '';
 		}
 
 		function addCard( filename, raw ) {
