@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.9.8' );
+define( 'JST_VERSION', '1.9.9' );
 
 
 /**
@@ -2483,8 +2483,12 @@ add_filter( 'winden_register_crawlers', 'jst_register_winden_crawler' );
  * admin screen. We only need the inert compiler engine + config
  * globals — replicated here manually, minus the watcher.
  */
-function jst_enqueue_winden_compiler_assets() {
+function jst_enqueue_winden_compiler_assets( $hook = '' ) {
 	if ( ! current_user_can( 'edit_posts' ) || ! is_admin_bar_showing() ) {
+		return;
+	}
+	// Don't interfere with Winden's own admin pages — it manages its assets there.
+	if ( $hook && strpos( $hook, 'winden' ) !== false ) {
 		return;
 	}
 
