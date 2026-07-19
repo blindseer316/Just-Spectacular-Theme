@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '1.9.9' );
+define( 'JST_VERSION', '2.0.0' );
 
 
 /**
@@ -158,6 +158,7 @@ function jst_render_theme_options_page() {
 		}
 		update_option( 'jst_disable_tailwind_prose', isset( $_POST['jst_disable_tailwind_prose'] ) ? '1' : '' );
 		update_option( 'jst_prose_invert', isset( $_POST['jst_prose_invert'] ) ? '1' : '' );
+		update_option( 'jst_sort_by_modified', isset( $_POST['jst_sort_by_modified'] ) ? '1' : '' );
 
 		// Write Custom CSS to a real file in uploads so it's enqueued as a linked stylesheet.
 		$css_content = isset( $_POST['jst_custom_css'] ) ? wp_unslash( $_POST['jst_custom_css'] ) : '';
@@ -170,8 +171,9 @@ function jst_render_theme_options_page() {
 	}
 
 	$fields        = jst_theme_options_fields();
-	$disable_prose = get_option( 'jst_disable_tailwind_prose', '' );
-	$prose_invert  = get_option( 'jst_prose_invert', '' );
+	$disable_prose    = get_option( 'jst_disable_tailwind_prose', '' );
+	$prose_invert     = get_option( 'jst_prose_invert', '' );
+	$sort_by_modified = get_option( 'jst_sort_by_modified', '' );
 	?>
 	<style>
 	#jst-sticky-save {
@@ -364,6 +366,18 @@ function jst_render_theme_options_page() {
 					<p><span class="description"><?php esc_html_e( 'Saved as /wp-content/uploads/jst-custom.css and enqueued as a linked stylesheet — not inline. Version-busted automatically on every save. Use for nav, footer, and any per-client CSS that doesn\'t belong in Header Scripts.', 'just-spectacular-theme' ); ?></span></p>
 					<p>
 						<textarea id="jst_custom_css" name="jst_custom_css" rows="18" class="jst-metabox-field" style="width:100%;font-family:monospace;"><?php echo esc_textarea( get_option( 'jst_custom_css', '' ) ); ?></textarea>
+					</p>
+
+					<h2><?php esc_html_e( 'Admin Behavior', 'just-spectacular-theme' ); ?></h2>
+					<p>
+						<label>
+							<input type="checkbox" name="jst_sort_by_modified" value="1" <?php checked( $sort_by_modified, '1' ); ?> />
+							<?php esc_html_e( 'Sort pages/posts list by date modified (newest first)', 'just-spectacular-theme' ); ?>
+						</label>
+						<br>
+						<span class="description">
+							<?php esc_html_e( 'Overrides the default post list order in wp-admin — pages and posts are sorted by last modified date instead of publish date. Users can still click column headers to re-sort.', 'just-spectacular-theme' ); ?>
+						</span>
 					</p>
 
 					<h2><?php esc_html_e( 'Content Styling', 'just-spectacular-theme' ); ?></h2>
@@ -2557,6 +2571,26 @@ function jst_add_winden_compile_admin_bar_node( $wp_admin_bar ) {
 	);
 }
 add_action( 'admin_bar_menu', 'jst_add_winden_compile_admin_bar_node', 100 );
+
+/**
+ * Sort pages/posts list by date modified when enabled in Theme Options.
+ */
+if ( get_option( 'jst_sort_by_modified', '' ) ) {
+	add_action( 'pre_get_posts', function( $query ) {
+		if ( ! is_admin() || ! $query->is_main_query() ) {
+			return;
+		}
+		$screen = get_current_screen();
+		if ( ! $screen || ! in_array( $screen->post_type, array( 'page', 'post' ), true ) ) {
+			return;
+		}
+		if ( isset( $_GET['orderby'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+			return;
+		}
+		$query->set( 'orderby', 'modified' );
+		$query->set( 'order', 'DESC' );
+	} );
+}
 
 /**
  * Click handler for the admin bar node: full crawl, then Winden's own
