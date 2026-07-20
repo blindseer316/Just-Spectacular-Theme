@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '2.0.1' );
+define( 'JST_VERSION', '2.1.0' );
 
 
 /**
@@ -160,6 +160,10 @@ function jst_render_theme_options_page() {
 		update_option( 'jst_prose_invert', isset( $_POST['jst_prose_invert'] ) ? '1' : '' );
 		update_option( 'jst_sort_by_modified', isset( $_POST['jst_sort_by_modified'] ) ? '1' : '' );
 
+		// Color Bridge — maps a client palette's custom properties to JST's canonical --jst-* vars.
+		$color_bridge = isset( $_POST['jst_color_bridge'] ) ? wp_unslash( $_POST['jst_color_bridge'] ) : '';
+		update_option( 'jst_color_bridge', $color_bridge );
+
 		// Write Custom CSS to a real file in uploads so it's enqueued as a linked stylesheet.
 		$css_content = isset( $_POST['jst_custom_css'] ) ? wp_unslash( $_POST['jst_custom_css'] ) : '';
 		update_option( 'jst_custom_css', $css_content );
@@ -248,6 +252,17 @@ function jst_render_theme_options_page() {
 	}
 	.jst-opts-badge.found  { background: #d1e7dd; color: #0a3622; }
 	.jst-opts-badge.empty  { background: #f8d7da; color: #58151c; }
+
+	/* Color Bridge collapsible box */
+	#jst-color-bridge-box {
+		background: #f6f7f7; border: 1px solid #dcdcde; border-radius: 4px;
+		padding: 10px 14px; margin: 8px 0 20px;
+	}
+	#jst-color-bridge-box summary {
+		cursor: pointer; font-weight: 600; font-size: 13px; color: #1d2327;
+		padding: 4px 0;
+	}
+	#jst-color-bridge-box[open] summary { margin-bottom: 8px; }
 
 	/* Tabs */
 	#jst-tab-nav { display:flex; gap:0; margin: 12px 0 0; border-bottom: 2px solid #dcdcde; }
@@ -361,6 +376,18 @@ function jst_render_theme_options_page() {
 						</p>
 						<p><span class="description"><?php echo esc_html( $field['description'] ); ?></span></p>
 					<?php endforeach; ?>
+
+					<details id="jst-color-bridge-box">
+						<summary><?php esc_html_e( 'Color Bridge (Palette Mapping)', 'just-spectacular-theme' ); ?></summary>
+						<p><span class="description"><?php esc_html_e( 'Maps this site\'s palette variables to JST\'s canonical --jst-* vars, so blog post titles, borders, and content colors follow the palette automatically. Only needed if the theme looks unstyled/default despite a palette being pasted above.', 'just-spectacular-theme' ); ?></span></p>
+						<p>
+							<button type="button" id="jst-bridge-detect-btn" class="button button-secondary"><?php esc_html_e( 'Auto-detect from Header Scripts', 'just-spectacular-theme' ); ?></button>
+							<span id="jst-bridge-detect-status" style="font-size:11px;color:#646970;"></span>
+						</p>
+						<p>
+							<textarea id="jst_color_bridge" name="jst_color_bridge" rows="10" class="jst-metabox-field" style="width:100%;font-family:monospace;"><?php echo esc_textarea( get_option( 'jst_color_bridge', '' ) ); ?></textarea>
+						</p>
+					</details>
 
 					<h2><?php esc_html_e( 'Custom CSS', 'just-spectacular-theme' ); ?></h2>
 					<p><span class="description"><?php esc_html_e( 'Saved as /wp-content/uploads/jst-custom.css and enqueued as a linked stylesheet — not inline. Version-busted automatically on every save. Use for nav, footer, and any per-client CSS that doesn\'t belong in Header Scripts.', 'just-spectacular-theme' ); ?></span></p>
@@ -671,6 +698,65 @@ function jst_render_theme_options_page() {
 		} );
 	} )();
 
+	// ── Color Bridge auto-detect ────────────────────────────────────────────
+	( function() {
+		var detectBtn = document.getElementById( 'jst-bridge-detect-btn' );
+		if ( ! detectBtn ) { return; }
+		var detectStatus = document.getElementById( 'jst-bridge-detect-status' );
+		var bridgeArea    = document.getElementById( 'jst_color_bridge' );
+		var headerArea    = document.getElementById( 'jst_header_scripts' );
+
+		// JST canonical vars → matching heuristics against a source var name.
+		var rules = [
+			{ target: '--jst-accent',       test: function(n){ return /primary|accent/.test(n) && ! /light|dim|dark|hover|mute/.test(n); } },
+			{ target: '--jst-accent-hover', test: function(n){ return /primary|accent/.test(n) && /dim|dark|hover/.test(n); } },
+			{ target: '--jst-text-dim',     test: function(n){ return /(white|text|ink|fg)/.test(n) && /dim/.test(n); } },
+			{ target: '--jst-muted',        test: function(n){ return /(white|text|ink|fg)/.test(n) && /mute/.test(n); } },
+			{ target: '--jst-text',         test: function(n){ return /(white|text|ink|fg)/.test(n) && ! /dim|mute|line|border/.test(n); } },
+			{ target: '--jst-border',       test: function(n){ return /line|border/.test(n); } },
+			{ target: '--jst-bg-alt',       test: function(n){ return /surface-2|surface2|bg-2|bg2|section-bg-2/.test(n); } },
+			{ target: '--jst-white',        test: function(n){ return /^--(brand-)?surface$|^--(brand-)?bg$/.test(n); } },
+		];
+
+		detectBtn.addEventListener( 'click', function() {
+			var src = headerArea ? headerArea.value : '';
+			var found = {};
+			var re = /(--[a-zA-Z0-9-]+)\s*:\s*([^;]+);/g;
+			var m;
+			var candidates = [];
+			while ( ( m = re.exec( src ) ) !== null ) {
+				candidates.push( m[1] );
+			}
+
+			rules.forEach( function( rule ) {
+				for ( var i = 0; i < candidates.length; i++ ) {
+					var name = candidates[ i ].toLowerCase();
+					if ( rule.test( name ) && ! found[ rule.target ] ) {
+						found[ rule.target ] = candidates[ i ];
+						break;
+					}
+				}
+			} );
+
+			var lines = Object.keys( found );
+			if ( ! lines.length ) {
+				detectStatus.textContent = 'No matching variables found — check naming or edit manually.';
+				return;
+			}
+
+			var css = ':root {\n';
+			lines.forEach( function( target ) {
+				css += '  ' + target + ': var(' + found[ target ] + ');\n';
+			} );
+			css += '}';
+
+			bridgeArea.value = css;
+			var box = document.getElementById( 'jst-color-bridge-box' );
+			if ( box ) { box.open = true; }
+			detectStatus.textContent = lines.length + ' mapping' + ( lines.length !== 1 ? 's' : '' ) + ' found — review before saving.';
+		} );
+	} )();
+
 	// ── Tab switching ────────────────────────────────────────────────────────
 	( function() {
 		var btns   = document.querySelectorAll( '.jst-tab-btn' );
@@ -911,6 +997,11 @@ function jst_content_class( $extra = '' ) {
  */
 function jst_output_header_scripts() {
 	echo get_option( 'jst_header_scripts', '' ); // phpcs:ignore -- intentional raw output, admin-trusted.
+
+	$color_bridge = get_option( 'jst_color_bridge', '' );
+	if ( $color_bridge ) {
+		echo "\n<style id=\"jst-color-bridge\">\n" . $color_bridge . "\n</style>\n"; // phpcs:ignore -- intentional raw output, admin-trusted.
+	}
 }
 add_action( 'wp_head', 'jst_output_header_scripts' );
 
