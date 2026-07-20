@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '2.0.0' );
+define( 'JST_VERSION', '2.0.1' );
 
 
 /**
@@ -2438,6 +2438,19 @@ class JST_Winden_Crawler {
 
 		foreach ( $parts as $part_id ) {
 			$classes = array_merge( $classes, $this->extract_classes_from_html( get_post_meta( $part_id, '_jst_part_html', true ) ) );
+		}
+
+		// Post/page content — needed so the typography plugin sees actual
+		// prose elements (<h2>, <p>, <ul> etc.) and generates their styles.
+		$content_posts = get_posts( array(
+			'post_type'      => array( 'post', 'page' ),
+			'post_status'    => 'publish',
+			'posts_per_page' => -1,
+			'fields'         => 'ids',
+			'no_found_rows'  => true,
+		) );
+		foreach ( $content_posts as $post_id ) {
+			$classes = array_merge( $classes, $this->extract_classes_from_html( get_post_field( 'post_content', $post_id ) ) );
 		}
 
 		return array_values( array_unique( $classes ) );
