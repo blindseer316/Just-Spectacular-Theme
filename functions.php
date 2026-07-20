@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '2.1.0' );
+define( 'JST_VERSION', '2.1.1' );
 
 
 /**
@@ -710,9 +710,9 @@ function jst_render_theme_options_page() {
 		var rules = [
 			{ target: '--jst-accent',       test: function(n){ return /primary|accent/.test(n) && ! /light|dim|dark|hover|mute/.test(n); } },
 			{ target: '--jst-accent-hover', test: function(n){ return /primary|accent/.test(n) && /dim|dark|hover/.test(n); } },
-			{ target: '--jst-text-dim',     test: function(n){ return /(white|text|ink|fg)/.test(n) && /dim/.test(n); } },
-			{ target: '--jst-muted',        test: function(n){ return /(white|text|ink|fg)/.test(n) && /mute/.test(n); } },
-			{ target: '--jst-text',         test: function(n){ return /(white|text|ink|fg)/.test(n) && ! /dim|mute|line|border/.test(n); } },
+			{ target: '--jst-text-dim',     test: function(n){ return /(white|text|fg)/.test(n) && /dim/.test(n); } },
+			{ target: '--jst-muted',        test: function(n){ return /(white|text|fg)/.test(n) && /mute/.test(n); } },
+			{ target: '--jst-text',         test: function(n){ return /(white|text|fg)/.test(n) && ! /dim|mute|line|border/.test(n); } },
 			{ target: '--jst-border',       test: function(n){ return /line|border/.test(n); } },
 			{ target: '--jst-bg-alt',       test: function(n){ return /surface-2|surface2|bg-2|bg2|section-bg-2/.test(n); } },
 			{ target: '--jst-white',        test: function(n){ return /^--(brand-)?surface$|^--(brand-)?bg$/.test(n); } },
@@ -737,6 +737,14 @@ function jst_render_theme_options_page() {
 					}
 				}
 			} );
+
+			// Prefer the body{} rule's actual text color — more reliable than
+			// name-guessing (e.g. "ink" is usually a bg tone, not text).
+			var bodyMatch = src.match( /\bbody\s*\{([^}]*)\}/i );
+			if ( bodyMatch ) {
+				var textMatch = bodyMatch[1].match( /(?:^|;)\s*color\s*:\s*var\(\s*(--[a-zA-Z0-9-]+)/i );
+				if ( textMatch ) { found['--jst-text'] = textMatch[1]; }
+			}
 
 			var lines = Object.keys( found );
 			if ( ! lines.length ) {
