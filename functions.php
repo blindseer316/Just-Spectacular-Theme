@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '2.2.0' );
+define( 'JST_VERSION', '2.3.0' );
 
 
 /**
@@ -375,19 +375,21 @@ function jst_render_theme_options_page() {
 							<textarea id="<?php echo esc_attr( $field_id ); ?>" name="<?php echo esc_attr( $field_id ); ?>" rows="14" class="jst-metabox-field" style="width:100%;font-family:monospace;"><?php echo get_option( $field_id, '' ); // phpcs:ignore -- intentionally unescaped raw HTML/script storage. ?></textarea>
 						</p>
 						<p><span class="description"><?php echo esc_html( $field['description'] ); ?></span></p>
-					<?php endforeach; ?>
 
-					<details id="jst-color-bridge-box">
-						<summary><?php esc_html_e( 'Color Bridge (Palette Mapping)', 'just-spectacular-theme' ); ?></summary>
-						<p><span class="description"><?php esc_html_e( 'Maps this site\'s palette variables to JST\'s canonical --jst-* vars, so blog post titles, borders, and content colors follow the palette automatically. Only needed if the theme looks unstyled/default despite a palette being pasted above.', 'just-spectacular-theme' ); ?></span></p>
-						<p>
-							<button type="button" id="jst-bridge-detect-btn" class="button button-secondary"><?php esc_html_e( 'Auto-detect from Header Scripts', 'just-spectacular-theme' ); ?></button>
-							<span id="jst-bridge-detect-status" style="font-size:11px;color:#646970;"></span>
-						</p>
-						<p>
-							<textarea id="jst_color_bridge" name="jst_color_bridge" rows="10" class="jst-metabox-field" style="width:100%;font-family:monospace;"><?php echo esc_textarea( get_option( 'jst_color_bridge', '' ) ); ?></textarea>
-						</p>
-					</details>
+						<?php if ( 'jst_header_scripts' === $field_id ) : ?>
+						<details id="jst-color-bridge-box">
+							<summary><?php esc_html_e( 'Color Bridge (Palette Mapping)', 'just-spectacular-theme' ); ?></summary>
+							<p><span class="description"><?php esc_html_e( 'Maps this site\'s palette variables to JST\'s canonical --jst-* vars, so blog post titles, borders, and content colors follow the palette automatically. Only needed if the theme looks unstyled/default despite a palette being pasted above.', 'just-spectacular-theme' ); ?></span></p>
+							<p>
+								<button type="button" id="jst-bridge-detect-btn" class="button button-secondary"><?php esc_html_e( 'Auto-detect from Header Scripts', 'just-spectacular-theme' ); ?></button>
+								<span id="jst-bridge-detect-status" style="font-size:11px;color:#646970;"></span>
+							</p>
+							<p>
+								<textarea id="jst_color_bridge" name="jst_color_bridge" rows="10" class="jst-metabox-field" style="width:100%;font-family:monospace;"><?php echo esc_textarea( get_option( 'jst_color_bridge', '' ) ); ?></textarea>
+							</p>
+						</details>
+						<?php endif; ?>
+					<?php endforeach; ?>
 
 					<h2><?php esc_html_e( 'Custom CSS', 'just-spectacular-theme' ); ?></h2>
 					<p><span class="description"><?php esc_html_e( 'Saved as /wp-content/uploads/jst-custom.css and enqueued as a linked stylesheet — not inline. Version-busted automatically on every save. Use for nav, footer, and any per-client CSS that doesn\'t belong in Header Scripts.', 'just-spectacular-theme' ); ?></span></p>
@@ -718,19 +720,35 @@ function jst_render_theme_options_page() {
 			{ target: '--jst-white',        test: function(n){ return /^--(brand-)?surface$|^--(brand-)?bg$/.test(n); } },
 		];
 
+		// Collect candidate color sources from two formats:
+		// 1. CSS custom properties: --name: value;
+		// 2. JS/Tailwind-config object entries: 'name': '#hex' or "name": "rgba(...)"
+		function collectCandidates( src ) {
+			var list = [];
+			var reVar = /(--[a-zA-Z0-9-]+)\s*:\s*([^;]+);/g;
+			var m;
+			while ( ( m = reVar.exec( src ) ) !== null ) {
+				list.push( { name: m[1], isVar: true } );
+			}
+			var reObj = /['"]([a-zA-Z][a-zA-Z0-9-]*)['"]\s*:\s*['"]((?:#[0-9a-fA-F]{3,8})|rgba?\([^)'"]+\))['"]/g;
+			while ( ( m = reObj.exec( src ) ) !== null ) {
+				list.push( { name: '--' + m[1], isVar: false, value: m[2] } );
+			}
+			return list;
+		}
+
+		function colorLine( candidate ) {
+			return candidate.isVar ? ( 'var(' + candidate.name + ')' ) : candidate.value;
+		}
+
 		detectBtn.addEventListener( 'click', function() {
 			var src = headerArea ? headerArea.value : '';
 			var found = {};
-			var re = /(--[a-zA-Z0-9-]+)\s*:\s*([^;]+);/g;
-			var m;
-			var candidates = [];
-			while ( ( m = re.exec( src ) ) !== null ) {
-				candidates.push( m[1] );
-			}
+			var candidates = collectCandidates( src );
 
 			rules.forEach( function( rule ) {
 				for ( var i = 0; i < candidates.length; i++ ) {
-					var name = candidates[ i ].toLowerCase();
+					var name = candidates[ i ].name.toLowerCase();
 					if ( rule.test( name ) && ! found[ rule.target ] ) {
 						found[ rule.target ] = candidates[ i ];
 						break;
@@ -738,12 +756,18 @@ function jst_render_theme_options_page() {
 				}
 			} );
 
-			// Prefer the body{} rule's actual text color — more reliable than
-			// name-guessing (e.g. "ink" is usually a bg tone, not text).
+			// Prefer the body{} rule's actual text color (var or literal) —
+			// more reliable than name-guessing (e.g. "ink" is usually a bg tone).
 			var bodyMatch = src.match( /\bbody\s*\{([^}]*)\}/i );
 			if ( bodyMatch ) {
-				var textMatch = bodyMatch[1].match( /(?:^|;)\s*color\s*:\s*var\(\s*(--[a-zA-Z0-9-]+)/i );
-				if ( textMatch ) { found['--jst-text'] = textMatch[1]; }
+				var textMatch = bodyMatch[1].match( /(?:^|;)\s*color\s*:\s*(var\(\s*--[a-zA-Z0-9-]+\s*\)|#[0-9a-fA-F]{3,8}|rgba?\([^)]+\))/i );
+				if ( textMatch ) {
+					var raw = textMatch[1].trim();
+					var varInner = raw.match( /^var\(\s*(--[a-zA-Z0-9-]+)\s*\)$/i );
+					found['--jst-text'] = varInner
+						? { name: varInner[1], isVar: true }
+						: { name: null, isVar: false, value: raw };
+				}
 			}
 
 			var lines = Object.keys( found );
@@ -754,7 +778,7 @@ function jst_render_theme_options_page() {
 
 			var css = ':root {\n';
 			lines.forEach( function( target ) {
-				css += '  ' + target + ': var(' + found[ target ] + ');\n';
+				css += '  ' + target + ': ' + colorLine( found[ target ] ) + ';\n';
 			} );
 			css += '}';
 
