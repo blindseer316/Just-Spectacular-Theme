@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '2.1.1' );
+define( 'JST_VERSION', '2.2.0' );
 
 
 /**
@@ -123,6 +123,10 @@ add_action( 'admin_menu', 'jst_register_theme_options_page' );
 
 function jst_theme_options_fields() {
 	return array(
+		'jst_header_scripts' => array(
+			'label'       => __( 'Header Scripts & Custom CSS', 'just-spectacular-theme' ),
+			'description' => __( 'Outputs inside <head> — use for external CSS links, fonts, custom <style> blocks, and other head-level scripts.', 'just-spectacular-theme' ),
+		),
 		'jst_navigation'     => array(
 			'label'       => __( 'Header Nav / Menu', 'just-spectacular-theme' ),
 			'description' => __( 'Outputs at the very start of &lt;body&gt; via wp_body_open — use for your global header and navigation markup. Shortcodes: [jst_menu] renders the WordPress primary nav menu (supports location, ul_class, depth attributes).', 'just-spectacular-theme' ),
@@ -130,10 +134,6 @@ function jst_theme_options_fields() {
 		'jst_footer'         => array(
 			'label'       => __( 'Footer HTML', 'just-spectacular-theme' ),
 			'description' => __( 'Outputs after the page content, before Footer Scripts — use for your global footer design and navigation markup.', 'just-spectacular-theme' ),
-		),
-		'jst_header_scripts' => array(
-			'label'       => __( 'Header Scripts & Custom CSS', 'just-spectacular-theme' ),
-			'description' => __( 'Outputs inside <head> — use for external CSS links, fonts, custom <style> blocks, and other head-level scripts.', 'just-spectacular-theme' ),
 		),
 		'jst_footer_scripts' => array(
 			'label'       => __( 'Footer Scripts', 'just-spectacular-theme' ),
