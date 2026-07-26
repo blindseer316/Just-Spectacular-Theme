@@ -2,3 +2,7 @@
 Thumbs.db
 node_modules/
 *.log
+
+# Local-only notes, not part of the distributed theme
+README.md
+CHANGELOG.md

@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '2.3.0' );
+define( 'JST_VERSION', '2.3.1' );
 
 
 /**
@@ -401,11 +401,11 @@ function jst_render_theme_options_page() {
 					<p>
 						<label>
 							<input type="checkbox" name="jst_sort_by_modified" value="1" <?php checked( $sort_by_modified, '1' ); ?> />
-							<?php esc_html_e( 'Sort pages/posts list by date modified (newest first)', 'just-spectacular-theme' ); ?>
+							<?php esc_html_e( 'Sort all post-type lists by date modified (newest first)', 'just-spectacular-theme' ); ?>
 						</label>
 						<br>
 						<span class="description">
-							<?php esc_html_e( 'Overrides the default post list order in wp-admin — pages and posts are sorted by last modified date instead of publish date. Users can still click column headers to re-sort.', 'just-spectacular-theme' ); ?>
+							<?php esc_html_e( 'Overrides the default list order in wp-admin — pages, posts, and any custom post type are sorted by last modified date instead of publish date. Users can still click column headers to re-sort.', 'just-spectacular-theme' ); ?>
 						</span>
 					</p>
 
@@ -2717,7 +2717,8 @@ if ( get_option( 'jst_sort_by_modified', '' ) ) {
 			return;
 		}
 		$screen = get_current_screen();
-		if ( ! $screen || ! in_array( $screen->post_type, array( 'page', 'post' ), true ) ) {
+		// Applies to any post-type list screen (page, post, and all CPTs).
+		if ( ! $screen || 'edit' !== $screen->base || empty( $screen->post_type ) ) {
 			return;
 		}
 		if ( isset( $_GET['orderby'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
