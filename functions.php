@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '2.4.0' );
+define( 'JST_VERSION', '2.5.0' );
 
 
 /**
@@ -506,6 +506,118 @@ function jst_render_theme_options_page() {
 	var jstTemplates = <?php echo wp_json_encode( $jst_templates ); ?>;
 	</script>
 	<script>
+	// ── Shared Header Scripts diff helpers (used by both the Theme Options
+	// scan panel and the Import Templates tab) ─────────────────────────────
+	function jstSplitCssTopLevel( css ) {
+		var blocks = [];
+		var depth  = 0;
+		var start  = 0;
+		for ( var i = 0; i < css.length; i++ ) {
+			if ( css[ i ] === '{' ) { depth++; }
+			else if ( css[ i ] === '}' ) {
+				depth--;
+				if ( depth === 0 ) {
+					var block = css.slice( start, i + 1 ).trim();
+					if ( block ) { blocks.push( block ); }
+					start = i + 1;
+				}
+			}
+		}
+		return blocks;
+	}
+
+	function jstSplitHeadBlocks( str ) {
+		var doc = ( new DOMParser() ).parseFromString( '<!doctype html><body>' + str + '</body>', 'text/html' );
+		var blocks = [];
+		Array.from( doc.body.children ).forEach( function( el ) {
+			if ( 'STYLE' === el.tagName ) {
+				jstSplitCssTopLevel( el.textContent ).forEach( function( rule ) { blocks.push( rule ); } );
+			} else {
+				blocks.push( el.outerHTML );
+			}
+		} );
+		return blocks;
+	}
+
+	function jstNormalizeBlock( b ) { return b.replace( /\s+/g, ' ' ).trim(); }
+
+	// Extracts head-level link/style/script tags from a parsed document,
+	// excluding meta/title/base — same rule set used for jst_header_scripts.
+	function jstExtractHeadScripts( doc ) {
+		var parts = [];
+		if ( doc.head ) {
+			Array.from( doc.head.children ).forEach( function( el ) {
+				var tag = el.tagName.toLowerCase();
+				if ( tag === 'meta' || tag === 'title' || tag === 'base' ) { return; }
+				parts.push( el.outerHTML );
+			} );
+		}
+		return parts.join( '\n' ).trim();
+	}
+
+	// Returns only the blocks in newContent that don't already exist in
+	// existingValue (both split into atomic, comparable units first).
+	function jstComputeFreshBlocks( newContent, existingValue ) {
+		var existingBlocks = jstSplitHeadBlocks( existingValue || '' ).map( jstNormalizeBlock );
+		var newBlocks       = jstSplitHeadBlocks( newContent );
+		return newBlocks.filter( function( b ) {
+			return existingBlocks.indexOf( jstNormalizeBlock( b ) ) === -1;
+		} );
+	}
+
+	// Renders a checklist of fresh blocks + an "Append" button that writes
+	// the checked ones into targetTextarea without touching existing content.
+	function jstRenderFreshBlocksUI( freshBlocks, container, targetTextarea ) {
+		container.innerHTML = '';
+		container.style.display = 'block';
+
+		var list = document.createElement( 'div' );
+		list.style.cssText = 'background:#fff;border:1px solid #dcdcde;border-radius:3px;padding:6px;margin-bottom:6px;max-height:200px;overflow-y:auto;';
+
+		freshBlocks.forEach( function( block, idx ) {
+			var row = document.createElement( 'label' );
+			row.style.cssText = 'display:flex;gap:6px;align-items:flex-start;padding:4px 0;font-size:11px;font-family:monospace;border-bottom:1px solid #f0f0f1;';
+			var cb = document.createElement( 'input' );
+			cb.type    = 'checkbox';
+			cb.checked = true;
+			cb.dataset.diffIndex = idx;
+			var txt = document.createElement( 'span' );
+			txt.style.whiteSpace = 'pre-wrap';
+			txt.textContent = block.length > 200 ? block.slice( 0, 200 ) + '…' : block;
+			row.appendChild( cb );
+			row.appendChild( txt );
+			list.appendChild( row );
+		} );
+		container.appendChild( list );
+
+		var appendBtn = document.createElement( 'button' );
+		appendBtn.type = 'button';
+		appendBtn.className = 'button button-primary button-small';
+		appendBtn.textContent = 'Append ' + freshBlocks.length + ' New Rule' + ( freshBlocks.length !== 1 ? 's' : '' ) + ' to Header Scripts';
+		container.appendChild( appendBtn );
+
+		var appendStatus = document.createElement( 'span' );
+		appendStatus.style.cssText = 'font-size:11px;color:#646970;margin-left:8px;';
+		container.appendChild( appendStatus );
+
+		appendBtn.addEventListener( 'click', function() {
+			var checked = Array.from( list.querySelectorAll( 'input:checked' ) ).map( function( cb ) {
+				return freshBlocks[ cb.dataset.diffIndex ];
+			} );
+			if ( ! checked.length || ! targetTextarea ) { return; }
+
+			var cssRules  = checked.filter( function( b ) { return ! /^<[a-z]+[\s>]/i.test( b ); } );
+			var otherTags = checked.filter( function( b ) { return /^<[a-z]+[\s>]/i.test( b ); } );
+
+			var addition = '';
+			if ( cssRules.length ) { addition += '<style>\n' + cssRules.join( '\n' ) + '\n</style>\n'; }
+			if ( otherTags.length ) { addition += otherTags.join( '\n' ) + '\n'; }
+
+			targetTextarea.value = targetTextarea.value.trim() + '\n\n' + addition.trim();
+			appendStatus.textContent = 'Appended — hit Save Options to commit.';
+		} );
+	}
+
 	( function() {
 		var fileInput = document.getElementById( 'jst-opts-file' );
 		var htmlArea  = document.getElementById( 'jst-opts-html' );
@@ -533,51 +645,9 @@ function jst_render_theme_options_page() {
 
 		function outerHtmlOf( el ) { return el ? el.outerHTML : ''; }
 
-		// ── Header Scripts diff tool ────────────────────────────────────────────
-		// Splits a head-fragment string (link/style/script tags) into atomic,
-		// comparable blocks: each <style> block is further split into top-level
-		// CSS rules/@media groups (brace-depth aware), other tags stay whole.
-		function splitCssTopLevel( css ) {
-			var blocks = [];
-			var depth  = 0;
-			var start  = 0;
-			for ( var i = 0; i < css.length; i++ ) {
-				if ( css[ i ] === '{' ) { depth++; }
-				else if ( css[ i ] === '}' ) {
-					depth--;
-					if ( depth === 0 ) {
-						var block = css.slice( start, i + 1 ).trim();
-						if ( block ) { blocks.push( block ); }
-						start = i + 1;
-					}
-				}
-			}
-			return blocks;
-		}
-
-		function splitHeadBlocks( str ) {
-			var doc = ( new DOMParser() ).parseFromString( '<!doctype html><body>' + str + '</body>', 'text/html' );
-			var blocks = [];
-			Array.from( doc.body.children ).forEach( function( el ) {
-				if ( 'STYLE' === el.tagName ) {
-					splitCssTopLevel( el.textContent ).forEach( function( rule ) { blocks.push( rule ); } );
-				} else {
-					blocks.push( el.outerHTML );
-				}
-			} );
-			return blocks;
-		}
-
-		function normalizeBlock( b ) { return b.replace( /\s+/g, ' ' ).trim(); }
-
+		// ── Header Scripts diff tool (uses shared jst* helpers above) ───────────
 		function renderHeaderDiff( newContent, container ) {
-			var existing = headerArea2 ? headerArea2.value : '';
-			var existingBlocks = splitHeadBlocks( existing ).map( normalizeBlock );
-			var newBlocks      = splitHeadBlocks( newContent );
-
-			var freshBlocks = newBlocks.filter( function( b ) {
-				return existingBlocks.indexOf( normalizeBlock( b ) ) === -1;
-			} );
+			var freshBlocks = jstComputeFreshBlocks( newContent, headerArea2 ? headerArea2.value : '' );
 
 			container.innerHTML = '';
 			container.style.display = 'block';
@@ -587,51 +657,7 @@ function jst_render_theme_options_page() {
 				return;
 			}
 
-			var list = document.createElement( 'div' );
-			list.style.cssText = 'background:#fff;border:1px solid #dcdcde;border-radius:3px;padding:6px;margin-bottom:6px;max-height:200px;overflow-y:auto;';
-
-			freshBlocks.forEach( function( block, idx ) {
-				var row = document.createElement( 'label' );
-				row.style.cssText = 'display:flex;gap:6px;align-items:flex-start;padding:4px 0;font-size:11px;font-family:monospace;border-bottom:1px solid #f0f0f1;';
-				var cb = document.createElement( 'input' );
-				cb.type    = 'checkbox';
-				cb.checked = true;
-				cb.dataset.diffIndex = idx;
-				var txt = document.createElement( 'span' );
-				txt.style.whiteSpace = 'pre-wrap';
-				txt.textContent = block.length > 200 ? block.slice( 0, 200 ) + '…' : block;
-				row.appendChild( cb );
-				row.appendChild( txt );
-				list.appendChild( row );
-			} );
-			container.appendChild( list );
-
-			var appendBtn = document.createElement( 'button' );
-			appendBtn.type = 'button';
-			appendBtn.className = 'button button-primary button-small';
-			appendBtn.textContent = 'Append ' + freshBlocks.length + ' New Rule' + ( freshBlocks.length !== 1 ? 's' : '' ) + ' to Header Scripts';
-			container.appendChild( appendBtn );
-
-			var appendStatus = document.createElement( 'span' );
-			appendStatus.style.cssText = 'font-size:11px;color:#646970;margin-left:8px;';
-			container.appendChild( appendStatus );
-
-			appendBtn.addEventListener( 'click', function() {
-				var checked = Array.from( list.querySelectorAll( 'input:checked' ) ).map( function( cb ) {
-					return freshBlocks[ cb.dataset.diffIndex ];
-				} );
-				if ( ! checked.length || ! headerArea2 ) { return; }
-
-				var cssRules = checked.filter( function( b ) { return ! /^<[a-z]+[\s>]/i.test( b ); } );
-				var otherTags = checked.filter( function( b ) { return /^<[a-z]+[\s>]/i.test( b ); } );
-
-				var addition = '';
-				if ( cssRules.length ) { addition += '<style>\n' + cssRules.join( '\n' ) + '\n</style>\n'; }
-				if ( otherTags.length ) { addition += otherTags.join( '\n' ) + '\n'; }
-
-				headerArea2.value = headerArea2.value.trim() + '\n\n' + addition.trim();
-				appendStatus.textContent = 'Appended — hit Save Options to commit.';
-			} );
+			jstRenderFreshBlocksUI( freshBlocks, container, headerArea2 );
 		}
 
 		function runScan() {
@@ -1028,6 +1054,25 @@ function jst_render_theme_options_page() {
 			card.querySelector( '.jst-imp-create-btn' ).addEventListener( 'click', function() {
 				createPage( card );
 			} );
+
+			// Detect new head CSS/scripts not already present in the saved
+			// Header Scripts box — common when a variant page (e.g. a
+			// service-area page) is built on the same base template plus a
+			// handful of its own rules.
+			var newHeaderContent = jstExtractHeadScripts( doc );
+			var headerTextarea   = document.getElementById( 'jst_header_scripts' );
+			if ( newHeaderContent && headerTextarea ) {
+				var freshBlocks = jstComputeFreshBlocks( newHeaderContent, headerTextarea.value );
+				if ( freshBlocks.length ) {
+					var diffWrap = document.createElement( 'div' );
+					diffWrap.style.cssText = 'margin:0 12px 12px;padding:8px 10px;background:#fff8e5;border:1px solid #f0d896;border-radius:3px;';
+					diffWrap.innerHTML = '<strong style="font-size:11px;color:#7a5b00;">' + freshBlocks.length + ' new header rule' + ( freshBlocks.length !== 1 ? 's' : '' ) + ' detected in this file</strong>';
+					var diffContainer = document.createElement( 'div' );
+					diffWrap.appendChild( diffContainer );
+					card.insertBefore( diffWrap, card.querySelector( '.jst-import-card-foot' ) );
+					jstRenderFreshBlocksUI( freshBlocks, diffContainer, headerTextarea );
+				}
+			}
 
 			cardsEl.appendChild( card );
 		}
