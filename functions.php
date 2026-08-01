@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '2.3.1' );
+define( 'JST_VERSION', '2.4.0' );
 
 
 /**
@@ -513,6 +513,7 @@ function jst_render_theme_options_page() {
 		var status    = document.getElementById( 'jst-opts-status' );
 		var results   = document.getElementById( 'jst-opts-results' );
 		var actions   = document.getElementById( 'jst-opts-actions' );
+		var headerArea2 = document.getElementById( 'jst_header_scripts' );
 
 		// Extracted content keyed by option field id.
 		var extracted = {};
@@ -531,6 +532,107 @@ function jst_render_theme_options_page() {
 		scanBtn.addEventListener( 'click', runScan );
 
 		function outerHtmlOf( el ) { return el ? el.outerHTML : ''; }
+
+		// ── Header Scripts diff tool ────────────────────────────────────────────
+		// Splits a head-fragment string (link/style/script tags) into atomic,
+		// comparable blocks: each <style> block is further split into top-level
+		// CSS rules/@media groups (brace-depth aware), other tags stay whole.
+		function splitCssTopLevel( css ) {
+			var blocks = [];
+			var depth  = 0;
+			var start  = 0;
+			for ( var i = 0; i < css.length; i++ ) {
+				if ( css[ i ] === '{' ) { depth++; }
+				else if ( css[ i ] === '}' ) {
+					depth--;
+					if ( depth === 0 ) {
+						var block = css.slice( start, i + 1 ).trim();
+						if ( block ) { blocks.push( block ); }
+						start = i + 1;
+					}
+				}
+			}
+			return blocks;
+		}
+
+		function splitHeadBlocks( str ) {
+			var doc = ( new DOMParser() ).parseFromString( '<!doctype html><body>' + str + '</body>', 'text/html' );
+			var blocks = [];
+			Array.from( doc.body.children ).forEach( function( el ) {
+				if ( 'STYLE' === el.tagName ) {
+					splitCssTopLevel( el.textContent ).forEach( function( rule ) { blocks.push( rule ); } );
+				} else {
+					blocks.push( el.outerHTML );
+				}
+			} );
+			return blocks;
+		}
+
+		function normalizeBlock( b ) { return b.replace( /\s+/g, ' ' ).trim(); }
+
+		function renderHeaderDiff( newContent, container ) {
+			var existing = headerArea2 ? headerArea2.value : '';
+			var existingBlocks = splitHeadBlocks( existing ).map( normalizeBlock );
+			var newBlocks      = splitHeadBlocks( newContent );
+
+			var freshBlocks = newBlocks.filter( function( b ) {
+				return existingBlocks.indexOf( normalizeBlock( b ) ) === -1;
+			} );
+
+			container.innerHTML = '';
+			container.style.display = 'block';
+
+			if ( ! freshBlocks.length ) {
+				container.innerHTML = '<p style="font-size:11px;color:#646970;margin:0;">No new rules found — everything here already exists in the saved Header Scripts.</p>';
+				return;
+			}
+
+			var list = document.createElement( 'div' );
+			list.style.cssText = 'background:#fff;border:1px solid #dcdcde;border-radius:3px;padding:6px;margin-bottom:6px;max-height:200px;overflow-y:auto;';
+
+			freshBlocks.forEach( function( block, idx ) {
+				var row = document.createElement( 'label' );
+				row.style.cssText = 'display:flex;gap:6px;align-items:flex-start;padding:4px 0;font-size:11px;font-family:monospace;border-bottom:1px solid #f0f0f1;';
+				var cb = document.createElement( 'input' );
+				cb.type    = 'checkbox';
+				cb.checked = true;
+				cb.dataset.diffIndex = idx;
+				var txt = document.createElement( 'span' );
+				txt.style.whiteSpace = 'pre-wrap';
+				txt.textContent = block.length > 200 ? block.slice( 0, 200 ) + '…' : block;
+				row.appendChild( cb );
+				row.appendChild( txt );
+				list.appendChild( row );
+			} );
+			container.appendChild( list );
+
+			var appendBtn = document.createElement( 'button' );
+			appendBtn.type = 'button';
+			appendBtn.className = 'button button-primary button-small';
+			appendBtn.textContent = 'Append ' + freshBlocks.length + ' New Rule' + ( freshBlocks.length !== 1 ? 's' : '' ) + ' to Header Scripts';
+			container.appendChild( appendBtn );
+
+			var appendStatus = document.createElement( 'span' );
+			appendStatus.style.cssText = 'font-size:11px;color:#646970;margin-left:8px;';
+			container.appendChild( appendStatus );
+
+			appendBtn.addEventListener( 'click', function() {
+				var checked = Array.from( list.querySelectorAll( 'input:checked' ) ).map( function( cb ) {
+					return freshBlocks[ cb.dataset.diffIndex ];
+				} );
+				if ( ! checked.length || ! headerArea2 ) { return; }
+
+				var cssRules = checked.filter( function( b ) { return ! /^<[a-z]+[\s>]/i.test( b ); } );
+				var otherTags = checked.filter( function( b ) { return /^<[a-z]+[\s>]/i.test( b ); } );
+
+				var addition = '';
+				if ( cssRules.length ) { addition += '<style>\n' + cssRules.join( '\n' ) + '\n</style>\n'; }
+				if ( otherTags.length ) { addition += otherTags.join( '\n' ) + '\n'; }
+
+				headerArea2.value = headerArea2.value.trim() + '\n\n' + addition.trim();
+				appendStatus.textContent = 'Appended — hit Save Options to commit.';
+			} );
+		}
 
 		function runScan() {
 			var raw = htmlArea.value.trim();
@@ -671,6 +773,29 @@ function jst_render_theme_options_page() {
 					pre.className = 'jst-opts-ext-preview';
 					pre.textContent = content.slice( 0, 400 ) + ( content.length > 400 ? '\n…' : '' );
 					card.appendChild( pre );
+				}
+
+				// Header Scripts gets an extra "detect new rules only" diff tool —
+				// useful when importing a variant page (e.g. a service-area page)
+				// built on top of an already-configured base template, so only
+				// the handful of new/changed rules get surfaced instead of the
+				// whole head block.
+				if ( found && 'jst_header_scripts' === key ) {
+					var diffBtn = document.createElement( 'button' );
+					diffBtn.type = 'button';
+					diffBtn.className = 'button button-small';
+					diffBtn.style.margin = '6px 10px 0';
+					diffBtn.textContent = 'Detect New Rules Only';
+					card.appendChild( diffBtn );
+
+					var diffBox = document.createElement( 'div' );
+					diffBox.style.margin = '6px 10px 10px';
+					diffBox.style.display = 'none';
+					card.appendChild( diffBox );
+
+					diffBtn.addEventListener( 'click', function() {
+						renderHeaderDiff( content, diffBox );
+					} );
 				}
 
 				results.appendChild( card );
