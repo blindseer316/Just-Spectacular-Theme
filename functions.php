@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '2.5.0' );
+define( 'JST_VERSION', '2.5.1' );
 
 
 /**
@@ -526,12 +526,19 @@ function jst_render_theme_options_page() {
 		return blocks;
 	}
 
+	// Strips /* ... */ CSS comments before block-splitting so a comment
+	// glued onto a rule in one file (but not the other) doesn't make an
+	// otherwise-identical rule register as a false "new" diff.
+	function jstStripCssComments( css ) {
+		return css.replace( /\/\*[\s\S]*?\*\//g, '' );
+	}
+
 	function jstSplitHeadBlocks( str ) {
 		var doc = ( new DOMParser() ).parseFromString( '<!doctype html><body>' + str + '</body>', 'text/html' );
 		var blocks = [];
 		Array.from( doc.body.children ).forEach( function( el ) {
 			if ( 'STYLE' === el.tagName ) {
-				jstSplitCssTopLevel( el.textContent ).forEach( function( rule ) { blocks.push( rule ); } );
+				jstSplitCssTopLevel( jstStripCssComments( el.textContent ) ).forEach( function( rule ) { blocks.push( rule ); } );
 			} else {
 				blocks.push( el.outerHTML );
 			}
