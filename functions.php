@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '2.5.1' );
+define( 'JST_VERSION', '2.6.0' );
 
 
 /**
@@ -572,9 +572,23 @@ function jst_render_theme_options_page() {
 		} );
 	}
 
+	// Builds a ready-to-insert HTML/CSS string from checked diff blocks —
+	// CSS rules wrapped in a <style> tag, other tags (link/script) as-is.
+	function jstBuildAddition( blocks ) {
+		var cssRules  = blocks.filter( function( b ) { return ! /^<[a-z]+[\s>]/i.test( b ); } );
+		var otherTags = blocks.filter( function( b ) { return /^<[a-z]+[\s>]/i.test( b ); } );
+		var addition  = '';
+		if ( cssRules.length ) { addition += '<style>\n' + cssRules.join( '\n' ) + '\n</style>\n'; }
+		if ( otherTags.length ) { addition += otherTags.join( '\n' ) + '\n'; }
+		return addition.trim();
+	}
+
 	// Renders a checklist of fresh blocks + an "Append" button that writes
 	// the checked ones into targetTextarea without touching existing content.
-	function jstRenderFreshBlocksUI( freshBlocks, container, targetTextarea ) {
+	// If pageCodeSetter is provided, a second button lets the caller route
+	// the same checked blocks somewhere else instead (e.g. a specific page's
+	// own Header Code field rather than the site-wide Header Scripts box).
+	function jstRenderFreshBlocksUI( freshBlocks, container, targetTextarea, pageCodeSetter ) {
 		container.innerHTML = '';
 		container.style.display = 'block';
 
@@ -597,32 +611,50 @@ function jst_render_theme_options_page() {
 		} );
 		container.appendChild( list );
 
-		var appendBtn = document.createElement( 'button' );
-		appendBtn.type = 'button';
-		appendBtn.className = 'button button-primary button-small';
-		appendBtn.textContent = 'Append ' + freshBlocks.length + ' New Rule' + ( freshBlocks.length !== 1 ? 's' : '' ) + ' to Header Scripts';
-		container.appendChild( appendBtn );
-
-		var appendStatus = document.createElement( 'span' );
-		appendStatus.style.cssText = 'font-size:11px;color:#646970;margin-left:8px;';
-		container.appendChild( appendStatus );
-
-		appendBtn.addEventListener( 'click', function() {
-			var checked = Array.from( list.querySelectorAll( 'input:checked' ) ).map( function( cb ) {
+		function getChecked() {
+			return Array.from( list.querySelectorAll( 'input:checked' ) ).map( function( cb ) {
 				return freshBlocks[ cb.dataset.diffIndex ];
 			} );
-			if ( ! checked.length || ! targetTextarea ) { return; }
+		}
 
-			var cssRules  = checked.filter( function( b ) { return ! /^<[a-z]+[\s>]/i.test( b ); } );
-			var otherTags = checked.filter( function( b ) { return /^<[a-z]+[\s>]/i.test( b ); } );
+		var btnRow = document.createElement( 'div' );
+		btnRow.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;';
+		container.appendChild( btnRow );
 
-			var addition = '';
-			if ( cssRules.length ) { addition += '<style>\n' + cssRules.join( '\n' ) + '\n</style>\n'; }
-			if ( otherTags.length ) { addition += otherTags.join( '\n' ) + '\n'; }
+		var appendStatus = document.createElement( 'span' );
+		appendStatus.style.cssText = 'font-size:11px;color:#646970;';
 
-			targetTextarea.value = targetTextarea.value.trim() + '\n\n' + addition.trim();
-			appendStatus.textContent = 'Appended — hit Save Options to commit.';
-		} );
+		if ( targetTextarea ) {
+			var appendBtn = document.createElement( 'button' );
+			appendBtn.type = 'button';
+			appendBtn.className = 'button button-primary button-small';
+			appendBtn.textContent = 'Append ' + freshBlocks.length + ' New Rule' + ( freshBlocks.length !== 1 ? 's' : '' ) + ' to Header Scripts';
+			btnRow.appendChild( appendBtn );
+
+			appendBtn.addEventListener( 'click', function() {
+				var checked = getChecked();
+				if ( ! checked.length ) { return; }
+				targetTextarea.value = targetTextarea.value.trim() + '\n\n' + jstBuildAddition( checked );
+				appendStatus.textContent = 'Appended — hit Save Options to commit.';
+			} );
+		}
+
+		if ( pageCodeSetter ) {
+			var pageBtn = document.createElement( 'button' );
+			pageBtn.type = 'button';
+			pageBtn.className = 'button button-secondary button-small';
+			pageBtn.textContent = 'Add to This Page’s Header Code Instead';
+			btnRow.appendChild( pageBtn );
+
+			pageBtn.addEventListener( 'click', function() {
+				var checked = getChecked();
+				if ( ! checked.length ) { return; }
+				pageCodeSetter( jstBuildAddition( checked ) );
+				appendStatus.textContent = 'Set on this page’s Header Code — will be included when the page is created.';
+			} );
+		}
+
+		btnRow.appendChild( appendStatus );
 	}
 
 	( function() {
@@ -1077,7 +1109,9 @@ function jst_render_theme_options_page() {
 					var diffContainer = document.createElement( 'div' );
 					diffWrap.appendChild( diffContainer );
 					card.insertBefore( diffWrap, card.querySelector( '.jst-import-card-foot' ) );
-					jstRenderFreshBlocksUI( freshBlocks, diffContainer, headerTextarea );
+					jstRenderFreshBlocksUI( freshBlocks, diffContainer, headerTextarea, function( addition ) {
+						card._jstPageHeaderCode = addition;
+					} );
 				}
 			}
 
@@ -1132,10 +1166,15 @@ function jst_render_theme_options_page() {
 			btn.disabled    = true;
 			btn.textContent = 'Creating…';
 
+			var payload = { title: title, content: content, status: status, template: tpl };
+			if ( card._jstPageHeaderCode ) {
+				payload.meta = { _jst_page_header_code: card._jstPageHeaderCode };
+			}
+
 			fetch( endpoint, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': jstRestNonce },
-				body: JSON.stringify( { title: title, content: content, status: status, template: tpl } ),
+				body: JSON.stringify( payload ),
 			} )
 			.then( function( res ) { return res.json().then( function( d ) { return { ok: res.ok, data: d }; } ); } )
 			.then( function( r ) {
@@ -1729,6 +1768,32 @@ function jst_register_part_meta() {
 	);
 }
 add_action( 'init', 'jst_register_part_meta' );
+
+/**
+ * Register _jst_page_header_code / _jst_page_footer_code for REST on
+ * page and post — lets the Import Templates tab set per-page header/
+ * footer code at creation time via the standard `meta` request param.
+ */
+function jst_register_page_code_meta() {
+	foreach ( array( 'page', 'post' ) as $post_type ) {
+		foreach ( array( '_jst_page_header_code', '_jst_page_footer_code' ) as $meta_key ) {
+			register_post_meta(
+				$post_type,
+				$meta_key,
+				array(
+					'type'          => 'string',
+					'single'        => true,
+					'show_in_rest'  => true,
+					'default'       => '',
+					'auth_callback' => function() {
+						return current_user_can( 'manage_options' );
+					},
+				)
+			);
+		}
+	}
+}
+add_action( 'init', 'jst_register_page_code_meta' );
 
 /**
  * Meta box: Part Name + HTML content + quick-paste buttons.
