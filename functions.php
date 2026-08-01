@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '2.6.0' );
+define( 'JST_VERSION', '2.7.0' );
 
 
 /**
@@ -300,14 +300,18 @@ function jst_render_theme_options_page() {
 	.jst-import-card-body select { width: 100%; font-size: 12px; padding: 4px 6px; box-sizing: border-box; }
 	.jst-import-card-body .jst-title-row { grid-column: 1 / -1; }
 	.jst-import-card-foot { padding: 8px 12px; border-top: 1px solid #f0f0f1; display: flex; align-items: center; gap: 8px; }
-	/* Import tab two-column layout */
+	/* Import tab three-column layout: upload controls | cards (widest) | output */
 	#jst-import-columns { display: flex; gap: 20px; align-items: flex-start; }
 	#jst-import-left {
-		width: 380px; flex-shrink: 0;
+		width: 260px; flex-shrink: 0;
+		position: sticky; top: 32px;
+	}
+	#jst-import-middle { flex: 1; min-width: 0; }
+	#jst-import-right {
+		width: 320px; flex-shrink: 0;
 		position: sticky; top: 32px;
 		max-height: calc(100vh - 60px); overflow-y: auto;
 	}
-	#jst-import-right { flex: 1; min-width: 0; }
 	/* Output log */
 	#jst-import-output {
 		background: #f6f7f7; border: 1px solid #dcdcde; border-radius: 4px;
@@ -466,7 +470,7 @@ function jst_render_theme_options_page() {
 		<div id="jst-tab-import" class="jst-tab-panel" style="padding-top:16px;">
 			<div id="jst-import-columns">
 
-				<!-- Left: upload + cards (sticky) -->
+				<!-- Left: upload controls (sticky, narrow) -->
 				<div id="jst-import-left">
 					<div id="jst-import-dropzone">
 						<p style="font-size:15px;font-weight:600;color:#1d2327;"><?php esc_html_e( 'Drop HTML files here', 'just-spectacular-theme' ); ?></p>
@@ -482,11 +486,14 @@ function jst_render_theme_options_page() {
 						<button type="button" id="jst-import-create-all" class="button button-primary"><?php esc_html_e( 'Create All', 'just-spectacular-theme' ); ?></button>
 						<span id="jst-import-bulk-status" style="font-size:12px;color:#646970;"></span>
 					</div>
+				</div>
 
+				<!-- Middle: page cards (widest) -->
+				<div id="jst-import-middle">
 					<div id="jst-import-cards"></div>
 				</div>
 
-				<!-- Right: output log -->
+				<!-- Right: output log (narrow) -->
 				<div id="jst-import-right">
 					<div id="jst-import-output">
 						<h3><?php esc_html_e( 'Output', 'just-spectacular-theme' ); ?></h3>
@@ -562,6 +569,18 @@ function jst_render_theme_options_page() {
 		return parts.join( '\n' ).trim();
 	}
 
+	// Extracts <script> tags anywhere in <body> — same rule set used for
+	// jst_footer_scripts (bottom-of-page scripts).
+	function jstExtractFooterScripts( doc ) {
+		var parts = [];
+		if ( doc.body ) {
+			Array.from( doc.body.querySelectorAll( 'script' ) ).forEach( function( el ) {
+				parts.push( el.outerHTML );
+			} );
+		}
+		return parts.join( '\n' ).trim();
+	}
+
 	// Returns only the blocks in newContent that don't already exist in
 	// existingValue (both split into atomic, comparable units first).
 	function jstComputeFreshBlocks( newContent, existingValue ) {
@@ -584,13 +603,24 @@ function jst_render_theme_options_page() {
 	}
 
 	// Renders a checklist of fresh blocks + an "Append" button that writes
-	// the checked ones into targetTextarea without touching existing content.
-	// If pageCodeSetter is provided, a second button lets the caller route
-	// the same checked blocks somewhere else instead (e.g. a specific page's
-	// own Header Code field rather than the site-wide Header Scripts box).
-	function jstRenderFreshBlocksUI( freshBlocks, container, targetTextarea, pageCodeSetter ) {
+	// only the checked ones into targetTextarea without touching existing
+	// content. If pageCodeSetter is provided, a second button lets the
+	// caller route the same checked blocks somewhere else instead (e.g. a
+	// specific page's own Header/Footer Code field rather than the
+	// site-wide box). targetLabel/pageFieldLabel customize button text so
+	// this same function serves both header and footer diffs.
+	function jstRenderFreshBlocksUI( freshBlocks, container, targetTextarea, targetLabel, pageCodeSetter, pageFieldLabel ) {
 		container.innerHTML = '';
 		container.style.display = 'block';
+
+		var selectAllRow = document.createElement( 'label' );
+		selectAllRow.style.cssText = 'display:flex;gap:6px;align-items:center;padding:4px 0 8px;font-size:11px;font-weight:600;color:#1d2327;';
+		var selectAllCb = document.createElement( 'input' );
+		selectAllCb.type = 'checkbox';
+		selectAllCb.checked = true;
+		selectAllRow.appendChild( selectAllCb );
+		selectAllRow.appendChild( document.createTextNode( 'Select all' ) );
+		container.appendChild( selectAllRow );
 
 		var list = document.createElement( 'div' );
 		list.style.cssText = 'background:#fff;border:1px solid #dcdcde;border-radius:3px;padding:6px;margin-bottom:6px;max-height:200px;overflow-y:auto;';
@@ -602,6 +632,7 @@ function jst_render_theme_options_page() {
 			cb.type    = 'checkbox';
 			cb.checked = true;
 			cb.dataset.diffIndex = idx;
+			cb.addEventListener( 'change', updateButtons );
 			var txt = document.createElement( 'span' );
 			txt.style.whiteSpace = 'pre-wrap';
 			txt.textContent = block.length > 200 ? block.slice( 0, 200 ) + '…' : block;
@@ -610,6 +641,11 @@ function jst_render_theme_options_page() {
 			list.appendChild( row );
 		} );
 		container.appendChild( list );
+
+		selectAllCb.addEventListener( 'change', function() {
+			list.querySelectorAll( 'input[type="checkbox"]' ).forEach( function( cb ) { cb.checked = selectAllCb.checked; } );
+			updateButtons();
+		} );
 
 		function getChecked() {
 			return Array.from( list.querySelectorAll( 'input:checked' ) ).map( function( cb ) {
@@ -624,11 +660,27 @@ function jst_render_theme_options_page() {
 		var appendStatus = document.createElement( 'span' );
 		appendStatus.style.cssText = 'font-size:11px;color:#646970;';
 
+		var appendBtn, pageBtn;
+
+		function updateButtons() {
+			var n = getChecked().length;
+			var allChecked = n === freshBlocks.length;
+			selectAllCb.checked = n > 0 && allChecked;
+			selectAllCb.indeterminate = n > 0 && ! allChecked;
+			if ( appendBtn ) {
+				appendBtn.disabled = n === 0;
+				appendBtn.textContent = 'Append ' + n + ' Rule' + ( n !== 1 ? 's' : '' ) + ' to ' + targetLabel;
+			}
+			if ( pageBtn ) {
+				pageBtn.disabled = n === 0;
+				pageBtn.textContent = 'Add ' + n + ' Rule' + ( n !== 1 ? 's' : '' ) + ' to This Page’s ' + pageFieldLabel + ' Instead';
+			}
+		}
+
 		if ( targetTextarea ) {
-			var appendBtn = document.createElement( 'button' );
+			appendBtn = document.createElement( 'button' );
 			appendBtn.type = 'button';
 			appendBtn.className = 'button button-primary button-small';
-			appendBtn.textContent = 'Append ' + freshBlocks.length + ' New Rule' + ( freshBlocks.length !== 1 ? 's' : '' ) + ' to Header Scripts';
 			btnRow.appendChild( appendBtn );
 
 			appendBtn.addEventListener( 'click', function() {
@@ -640,21 +692,21 @@ function jst_render_theme_options_page() {
 		}
 
 		if ( pageCodeSetter ) {
-			var pageBtn = document.createElement( 'button' );
+			pageBtn = document.createElement( 'button' );
 			pageBtn.type = 'button';
 			pageBtn.className = 'button button-secondary button-small';
-			pageBtn.textContent = 'Add to This Page’s Header Code Instead';
 			btnRow.appendChild( pageBtn );
 
 			pageBtn.addEventListener( 'click', function() {
 				var checked = getChecked();
 				if ( ! checked.length ) { return; }
 				pageCodeSetter( jstBuildAddition( checked ) );
-				appendStatus.textContent = 'Set on this page’s Header Code — will be included when the page is created.';
+				appendStatus.textContent = 'Set on this page’s ' + pageFieldLabel + ' — will be included when the page is created.';
 			} );
 		}
 
 		btnRow.appendChild( appendStatus );
+		updateButtons();
 	}
 
 	( function() {
@@ -684,7 +736,9 @@ function jst_render_theme_options_page() {
 
 		function outerHtmlOf( el ) { return el ? el.outerHTML : ''; }
 
-		// ── Header Scripts diff tool (uses shared jst* helpers above) ───────────
+		// ── Header/Footer Scripts diff tool (uses shared jst* helpers above) ────
+		var footerScriptsArea = document.getElementById( 'jst_footer_scripts' );
+
 		function renderHeaderDiff( newContent, container ) {
 			var freshBlocks = jstComputeFreshBlocks( newContent, headerArea2 ? headerArea2.value : '' );
 
@@ -696,7 +750,21 @@ function jst_render_theme_options_page() {
 				return;
 			}
 
-			jstRenderFreshBlocksUI( freshBlocks, container, headerArea2 );
+			jstRenderFreshBlocksUI( freshBlocks, container, headerArea2, 'Header Scripts' );
+		}
+
+		function renderFooterScriptsDiff( newContent, container ) {
+			var freshBlocks = jstComputeFreshBlocks( newContent, footerScriptsArea ? footerScriptsArea.value : '' );
+
+			container.innerHTML = '';
+			container.style.display = 'block';
+
+			if ( ! freshBlocks.length ) {
+				container.innerHTML = '<p style="font-size:11px;color:#646970;margin:0;">No new scripts found — everything here already exists in the saved Footer Scripts.</p>';
+				return;
+			}
+
+			jstRenderFreshBlocksUI( freshBlocks, container, footerScriptsArea, 'Footer Scripts' );
 		}
 
 		function runScan() {
@@ -845,7 +913,9 @@ function jst_render_theme_options_page() {
 				// built on top of an already-configured base template, so only
 				// the handful of new/changed rules get surfaced instead of the
 				// whole head block.
-				if ( found && 'jst_header_scripts' === key ) {
+				if ( found && ( 'jst_header_scripts' === key || 'jst_footer_scripts' === key ) ) {
+					var diffFn = ( 'jst_header_scripts' === key ) ? renderHeaderDiff : renderFooterScriptsDiff;
+
 					var diffBtn = document.createElement( 'button' );
 					diffBtn.type = 'button';
 					diffBtn.className = 'button button-small';
@@ -859,7 +929,7 @@ function jst_render_theme_options_page() {
 					card.appendChild( diffBox );
 
 					diffBtn.addEventListener( 'click', function() {
-						renderHeaderDiff( content, diffBox );
+						diffFn( content, diffBox );
 					} );
 				}
 
@@ -1109,9 +1179,27 @@ function jst_render_theme_options_page() {
 					var diffContainer = document.createElement( 'div' );
 					diffWrap.appendChild( diffContainer );
 					card.insertBefore( diffWrap, card.querySelector( '.jst-import-card-foot' ) );
-					jstRenderFreshBlocksUI( freshBlocks, diffContainer, headerTextarea, function( addition ) {
+				jstRenderFreshBlocksUI( freshBlocks, diffContainer, headerTextarea, 'Header Scripts', function( addition ) {
 						card._jstPageHeaderCode = addition;
-					} );
+					}, 'Header Code' );
+				}
+			}
+
+			// Same detection for footer scripts (bottom-of-body <script> tags).
+			var newFooterContent = jstExtractFooterScripts( doc );
+			var footerTextarea   = document.getElementById( 'jst_footer_scripts' );
+			if ( newFooterContent && footerTextarea ) {
+				var freshFooterBlocks = jstComputeFreshBlocks( newFooterContent, footerTextarea.value );
+				if ( freshFooterBlocks.length ) {
+					var footerDiffWrap = document.createElement( 'div' );
+					footerDiffWrap.style.cssText = 'margin:0 12px 12px;padding:8px 10px;background:#fff8e5;border:1px solid #f0d896;border-radius:3px;';
+					footerDiffWrap.innerHTML = '<strong style="font-size:11px;color:#7a5b00;">' + freshFooterBlocks.length + ' new footer script' + ( freshFooterBlocks.length !== 1 ? 's' : '' ) + ' detected in this file</strong>';
+					var footerDiffContainer = document.createElement( 'div' );
+					footerDiffWrap.appendChild( footerDiffContainer );
+					card.insertBefore( footerDiffWrap, card.querySelector( '.jst-import-card-foot' ) );
+					jstRenderFreshBlocksUI( freshFooterBlocks, footerDiffContainer, footerTextarea, 'Footer Scripts', function( addition ) {
+						card._jstPageFooterCode = addition;
+					}, 'Footer Code' );
 				}
 			}
 
@@ -1167,8 +1255,10 @@ function jst_render_theme_options_page() {
 			btn.textContent = 'Creating…';
 
 			var payload = { title: title, content: content, status: status, template: tpl };
-			if ( card._jstPageHeaderCode ) {
-				payload.meta = { _jst_page_header_code: card._jstPageHeaderCode };
+			if ( card._jstPageHeaderCode || card._jstPageFooterCode ) {
+				payload.meta = {};
+				if ( card._jstPageHeaderCode ) { payload.meta._jst_page_header_code = card._jstPageHeaderCode; }
+				if ( card._jstPageFooterCode ) { payload.meta._jst_page_footer_code = card._jstPageFooterCode; }
 			}
 
 			fetch( endpoint, {
