@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '2.7.0' );
+define( 'JST_VERSION', '2.8.0' );
 
 
 /**
@@ -533,27 +533,74 @@ function jst_render_theme_options_page() {
 		return blocks;
 	}
 
-	// Strips /* ... */ CSS comments before block-splitting so a comment
-	// glued onto a rule in one file (but not the other) doesn't make an
-	// otherwise-identical rule register as a false "new" diff.
-	function jstStripCssComments( css ) {
+	// Splits JS into top-level statements (each IIFE like `(function(){...})();`
+	// becomes its own unit) by tracking combined ( / { depth and cutting at
+	// each top-level ';'. Not a real parser — good enough for the hand-authored
+	// template scripts this tool deals with, same trust/scope as the CSS
+	// splitter above.
+	function jstSplitScriptTopLevel( js ) {
+		var blocks = [];
+		var depth  = 0;
+		var start  = 0;
+		for ( var i = 0; i < js.length; i++ ) {
+			var ch = js[ i ];
+			if ( ch === '{' || ch === '(' ) { depth++; }
+			else if ( ch === '}' || ch === ')' ) { depth--; }
+			else if ( ch === ';' && depth === 0 ) {
+				var block = js.slice( start, i + 1 ).trim();
+				if ( block ) { blocks.push( block ); }
+				start = i + 1;
+			}
+		}
+		var tail = js.slice( start ).trim();
+		if ( tail ) { blocks.push( tail ); }
+		return blocks;
+	}
+
+	// Strips /* ... */ block comments — shared by CSS and JS (identical syntax).
+	function jstStripBlockComments( css ) {
 		return css.replace( /\/\*[\s\S]*?\*\//g, '' );
 	}
 
+	// Strips // line comments — naive (doesn't understand strings/regex
+	// containing "//"), acceptable for the trusted admin-authored scripts
+	// this tool handles.
+	function jstStripLineComments( js ) {
+		return js.split( '\n' ).map( function( line ) {
+			var idx = line.indexOf( '//' );
+			return idx === -1 ? line : line.slice( 0, idx );
+		} ).join( '\n' );
+	}
+
+	// Splits a head/footer fragment string into typed, independently
+	// comparable blocks: { type: 'style'|'script'|'tag', text } — CSS rules
+	// and JS top-level statements/IIFEs are split out individually so, e.g.,
+	// a shared mobile-menu IIFE and a page-specific tab-toggle IIFE bundled
+	// in the same <script> tag are compared (and can be appended) separately
+	// instead of the whole tag having to match byte-for-byte.
 	function jstSplitHeadBlocks( str ) {
 		var doc = ( new DOMParser() ).parseFromString( '<!doctype html><body>' + str + '</body>', 'text/html' );
 		var blocks = [];
 		Array.from( doc.body.children ).forEach( function( el ) {
 			if ( 'STYLE' === el.tagName ) {
-				jstSplitCssTopLevel( jstStripCssComments( el.textContent ) ).forEach( function( rule ) { blocks.push( rule ); } );
+				jstSplitCssTopLevel( jstStripBlockComments( el.textContent ) ).forEach( function( rule ) {
+					blocks.push( { type: 'style', text: rule } );
+				} );
+			} else if ( 'SCRIPT' === el.tagName && ! el.src && el.textContent.trim() && 'application/ld+json' !== el.getAttribute( 'type' ) ) {
+				var cleaned = jstStripLineComments( jstStripBlockComments( el.textContent ) );
+				jstSplitScriptTopLevel( cleaned ).forEach( function( stmt ) {
+					blocks.push( { type: 'script', text: stmt } );
+				} );
 			} else {
-				blocks.push( el.outerHTML );
+				blocks.push( { type: 'tag', text: el.outerHTML } );
 			}
 		} );
 		return blocks;
 	}
 
-	function jstNormalizeBlock( b ) { return b.replace( /\s+/g, ' ' ).trim(); }
+	function jstNormalizeBlock( block ) {
+		return block.type + '::' + block.text.replace( /\s+/g, ' ' ).trim();
+	}
 
 	// Extracts head-level link/style/script tags from a parsed document,
 	// excluding meta/title/base — same rule set used for jst_header_scripts.
@@ -582,7 +629,7 @@ function jst_render_theme_options_page() {
 	}
 
 	// Returns only the blocks in newContent that don't already exist in
-	// existingValue (both split into atomic, comparable units first).
+	// existingValue (both split into atomic, typed, comparable units first).
 	function jstComputeFreshBlocks( newContent, existingValue ) {
 		var existingBlocks = jstSplitHeadBlocks( existingValue || '' ).map( jstNormalizeBlock );
 		var newBlocks       = jstSplitHeadBlocks( newContent );
@@ -591,14 +638,18 @@ function jst_render_theme_options_page() {
 		} );
 	}
 
-	// Builds a ready-to-insert HTML/CSS string from checked diff blocks —
-	// CSS rules wrapped in a <style> tag, other tags (link/script) as-is.
+	// Builds a ready-to-insert HTML/CSS/JS string from checked diff blocks —
+	// style blocks wrapped in one <style> tag, script statements wrapped in
+	// one <script> tag, whole tags (link, <script src>, ld+json) as-is.
 	function jstBuildAddition( blocks ) {
-		var cssRules  = blocks.filter( function( b ) { return ! /^<[a-z]+[\s>]/i.test( b ); } );
-		var otherTags = blocks.filter( function( b ) { return /^<[a-z]+[\s>]/i.test( b ); } );
-		var addition  = '';
-		if ( cssRules.length ) { addition += '<style>\n' + cssRules.join( '\n' ) + '\n</style>\n'; }
-		if ( otherTags.length ) { addition += otherTags.join( '\n' ) + '\n'; }
+		var styleRules = blocks.filter( function( b ) { return 'style' === b.type; } ).map( function( b ) { return b.text; } );
+		var scriptStmts = blocks.filter( function( b ) { return 'script' === b.type; } ).map( function( b ) { return b.text; } );
+		var tags = blocks.filter( function( b ) { return 'tag' === b.type; } ).map( function( b ) { return b.text; } );
+
+		var addition = '';
+		if ( styleRules.length ) { addition += '<style>\n' + styleRules.join( '\n' ) + '\n</style>\n'; }
+		if ( scriptStmts.length ) { addition += '<script>\n' + scriptStmts.join( '\n\n' ) + '\n</script>\n'; }
+		if ( tags.length ) { addition += tags.join( '\n' ) + '\n'; }
 		return addition.trim();
 	}
 
@@ -635,7 +686,8 @@ function jst_render_theme_options_page() {
 			cb.addEventListener( 'change', updateButtons );
 			var txt = document.createElement( 'span' );
 			txt.style.whiteSpace = 'pre-wrap';
-			txt.textContent = block.length > 200 ? block.slice( 0, 200 ) + '…' : block;
+			var blockText = block.text;
+			txt.textContent = blockText.length > 200 ? blockText.slice( 0, 200 ) + '…' : blockText;
 			row.appendChild( cb );
 			row.appendChild( txt );
 			list.appendChild( row );
