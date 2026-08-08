@@ -1846,6 +1846,87 @@ function jst_render_theme_options_page() {
 			jstMenuSave().then( function() { jstMenuRender(); } );
 		}
 
+		// Renaming edits only the visible menu text (the link's own text
+		// node) — it never touches the actual page/post title. Only
+		// replaces el's own text node(s), leaving any nested icon elements
+		// (e.g. a caret <i>) untouched.
+		function jstMenuSetOwnText( el, newText ) {
+			var textNodes = Array.from( el.childNodes ).filter( function( n ) { return 3 === n.nodeType; } );
+			if ( textNodes.length ) {
+				textNodes[ 0 ].textContent = newText;
+				for ( var i = 1; i < textNodes.length; i++ ) { textNodes[ i ].textContent = ''; }
+			} else {
+				el.insertBefore( document.createTextNode( newText ), el.firstChild );
+			}
+		}
+
+		// Swaps `container`'s contents for an inline text input + Save/Cancel.
+		// Cancel just re-renders (nothing was mutated yet); Save hands the
+		// trimmed value to `onSave`, which is responsible for applying it,
+		// saving, and re-rendering.
+		function jstMenuInlineRename( container, currentText, onSave ) {
+			container.innerHTML = '';
+			var input = document.createElement( 'input' );
+			input.type = 'text';
+			input.value = currentText;
+			input.style.cssText = 'font-size:12px;padding:2px 4px;flex:1;min-width:80px;';
+			container.appendChild( input );
+			var saveBtn = document.createElement( 'button' );
+			saveBtn.type = 'button';
+			saveBtn.className = 'button button-small button-primary';
+			saveBtn.textContent = 'Save';
+			container.appendChild( saveBtn );
+			var cancelBtn = document.createElement( 'button' );
+			cancelBtn.type = 'button';
+			cancelBtn.className = 'button button-small';
+			cancelBtn.textContent = 'Cancel';
+			container.appendChild( cancelBtn );
+			input.focus();
+			input.select();
+			saveBtn.addEventListener( 'click', function() {
+				var val = input.value.trim();
+				if ( val ) { onSave( val ); }
+			} );
+			cancelBtn.addEventListener( 'click', function() { jstMenuRender(); } );
+			input.addEventListener( 'keydown', function( e ) {
+				if ( 'Enter' === e.key ) { saveBtn.click(); }
+				if ( 'Escape' === e.key ) { cancelBtn.click(); }
+			} );
+		}
+
+		function jstMenuRenameChild( item, id, newText ) {
+			item.members.forEach( function( member ) {
+				member.entries.forEach( function( e ) {
+					if ( e.id === id && e.anchor ) { jstMenuSetOwnText( e.anchor, newText ); }
+				} );
+			} );
+			jstMenuSave().then( function() { jstMenuRender(); } );
+		}
+
+		// Moves a sub-item up/down within its dropdown (direction: -1 up,
+		// +1 down), applied to both the desktop and mobile copies. Reorders
+		// top-level items themselves aren't supported yet — only sub-items
+		// within a given dropdown.
+		function jstMenuMoveChild( item, id, direction ) {
+			item.members.forEach( function( member ) {
+				var idx = member.entries.findIndex( function( e ) { return e.id === id; } );
+				if ( -1 === idx ) { return; }
+				var swapIdx = idx + direction;
+				if ( swapIdx < 0 || swapIdx >= member.entries.length ) { return; }
+				var a = member.entries[ idx ].node;
+				var b = member.entries[ swapIdx ].node;
+				if ( ! a.parentNode || a.parentNode !== b.parentNode ) { return; }
+				if ( direction < 0 ) {
+					b.parentNode.insertBefore( a, b );
+				} else if ( b.nextSibling ) {
+					b.parentNode.insertBefore( a, b.nextSibling );
+				} else {
+					b.parentNode.appendChild( a );
+				}
+			} );
+			jstMenuSave().then( function() { jstMenuRender(); } );
+		}
+
 		function jstMenuOpenAddPanel( item, container, statusEl2 ) {
 			var existing = container.querySelector( '.jst-menu-add-panel' );
 			if ( existing ) { existing.remove(); return; }
@@ -1927,9 +2008,29 @@ function jst_render_theme_options_page() {
 
 			var head = document.createElement( 'div' );
 			head.className = 'jst-opts-ext-header';
+
+			var titleWrap = document.createElement( 'span' );
+			titleWrap.style.cssText = 'display:flex;align-items:center;gap:6px;';
 			var titleSpan = document.createElement( 'span' );
 			titleSpan.textContent = item.label;
-			head.appendChild( titleSpan );
+			titleWrap.appendChild( titleSpan );
+			var renameTopBtn = document.createElement( 'button' );
+			renameTopBtn.type = 'button';
+			renameTopBtn.className = 'button button-small';
+			renameTopBtn.textContent = '✎';
+			renameTopBtn.title = 'Rename in menu (does not change the page title)';
+			renameTopBtn.addEventListener( 'click', function() {
+				jstMenuInlineRename( titleWrap, item.label, function( newLabel ) {
+					if ( 'dropdown' === item.kind ) {
+						item.toggleNodes.forEach( function( t ) { jstMenuSetOwnText( t, newLabel ); } );
+					} else {
+						item.anchors.forEach( function( a ) { jstMenuSetOwnText( a, newLabel ); } );
+					}
+					jstMenuSave().then( function() { jstMenuRender(); } );
+				} );
+			} );
+			titleWrap.appendChild( renameTopBtn );
+			head.appendChild( titleWrap );
 
 			var removeBtn = document.createElement( 'button' );
 			removeBtn.type = 'button';
@@ -1959,9 +2060,12 @@ function jst_render_theme_options_page() {
 			var list = document.createElement( 'div' );
 			list.style.cssText = 'margin-bottom:8px;';
 			var primaryMember = item.members[ 0 ];
-			primaryMember.entries.forEach( function( entry ) {
+			primaryMember.entries.forEach( function( entry, idx ) {
 				var childRow = document.createElement( 'div' );
 				childRow.className = 'jst-out-row';
+
+				var nameWrap = document.createElement( 'span' );
+				nameWrap.style.cssText = 'display:flex;align-items:center;gap:6px;flex:1;min-width:0;';
 				var name = document.createElement( 'span' );
 				name.className = 'jst-out-title';
 				// Show what's actually on the site (the link's own text) —
@@ -1969,14 +2073,46 @@ function jst_render_theme_options_page() {
 				// empty (e.g. icon-only), so it never shows a mismatched label.
 				var ownText = entry.anchor ? ( entry.anchor.textContent || '' ).replace( /\s+/g, ' ' ).trim() : '';
 				var known = jstMenuState.itemsById[ entry.id ];
-				name.textContent = ownText || ( known ? known.title : '(unknown)' );
-				childRow.appendChild( name );
+				var displayText = ownText || ( known ? known.title : '(unknown)' );
+				name.textContent = displayText;
+				nameWrap.appendChild( name );
+				var renameChildBtn = document.createElement( 'button' );
+				renameChildBtn.type = 'button';
+				renameChildBtn.className = 'button button-small';
+				renameChildBtn.textContent = '✎';
+				renameChildBtn.title = 'Rename in menu (does not change the page title)';
+				renameChildBtn.addEventListener( 'click', function() {
+					jstMenuInlineRename( nameWrap, displayText, function( newLabel ) {
+						jstMenuRenameChild( item, entry.id, newLabel );
+					} );
+				} );
+				nameWrap.appendChild( renameChildBtn );
+				childRow.appendChild( nameWrap );
+
+				var upBtn = document.createElement( 'button' );
+				upBtn.type = 'button';
+				upBtn.className = 'button button-small';
+				upBtn.textContent = '↑';
+				upBtn.title = 'Move up';
+				upBtn.disabled = 0 === idx;
+				upBtn.addEventListener( 'click', function() { jstMenuMoveChild( item, entry.id, -1 ); } );
+				childRow.appendChild( upBtn );
+
+				var downBtn = document.createElement( 'button' );
+				downBtn.type = 'button';
+				downBtn.className = 'button button-small';
+				downBtn.textContent = '↓';
+				downBtn.title = 'Move down';
+				downBtn.disabled = idx === primaryMember.entries.length - 1;
+				downBtn.addEventListener( 'click', function() { jstMenuMoveChild( item, entry.id, 1 ); } );
+				childRow.appendChild( downBtn );
+
 				var xBtn = document.createElement( 'button' );
 				xBtn.type = 'button';
 				xBtn.className = 'button button-small';
 				xBtn.textContent = '✕';
 				xBtn.addEventListener( 'click', function() {
-					if ( ! window.confirm( 'Remove "' + name.textContent + '" from ' + item.label + '?' ) ) { return; }
+					if ( ! window.confirm( 'Remove "' + displayText + '" from ' + item.label + '?' ) ) { return; }
 					jstMenuRemoveChild( item, entry.id );
 				} );
 				childRow.appendChild( xBtn );
