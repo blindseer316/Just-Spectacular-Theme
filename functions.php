@@ -506,22 +506,17 @@ function jst_render_theme_options_page() {
 		</div><!-- #jst-tab-import -->
 
 		<div id="jst-tab-menu" class="jst-tab-panel" style="padding-top:16px;">
-			<div id="jst-menu-columns">
+			<div id="jst-menu-wrap" style="max-width:640px;">
 
-				<div id="jst-menu-left">
-					<p style="color:#646970;font-size:12px;max-width:640px;"><?php esc_html_e( 'Scans the Header Nav / Menu HTML currently saved in Theme Options, matches its links against real published pages/CPT items, and lets you sync each dropdown against a checklist — new items are cloned from an existing linked item so they keep its exact styling.', 'just-spectacular-theme' ); ?></p>
-					<p>
-						<button type="button" id="jst-menu-scan-btn" class="button button-primary"><?php esc_html_e( 'Scan Current Menu', 'just-spectacular-theme' ); ?></button>
-						<span id="jst-menu-scan-status" style="font-size:12px;color:#646970;margin-left:8px;"></span>
-					</p>
-				</div>
+				<p style="color:#646970;font-size:12px;"><?php esc_html_e( 'Reads your saved Header Nav / Menu HTML and shows it as a plain list — add a page under an existing menu item, remove one, or add a whole new top-level item. Changes save immediately.', 'just-spectacular-theme' ); ?></p>
+				<p>
+					<button type="button" id="jst-menu-load-btn" class="button button-primary"><?php esc_html_e( 'Load Current Menu', 'just-spectacular-theme' ); ?></button>
+					<span id="jst-menu-load-status" style="font-size:12px;color:#646970;margin-left:8px;"></span>
+				</p>
 
-				<div id="jst-menu-groups"></div>
+				<div id="jst-menu-add-toplevel-row" style="display:none;margin:10px 0;"></div>
 
-				<details id="jst-menu-manual-box" style="margin-top:12px;">
-					<summary style="cursor:pointer;font-weight:600;font-size:13px;color:#1d2327;padding:4px 0;"><?php esc_html_e( "Can't auto-detect a group? Add one manually", 'just-spectacular-theme' ); ?></summary>
-					<div id="jst-menu-manual-body" style="padding:10px 0 0;"></div>
-				</details>
+				<div id="jst-menu-outline"></div>
 
 			</div>
 		</div><!-- #jst-tab-menu -->
@@ -1374,15 +1369,21 @@ function jst_render_theme_options_page() {
 		} );
 	} )();
 
-	// ── Menu tab: detect CPT/page-backed nav dropdowns, sync via checklist ──
+	// ── Menu tab: plain-language outline — add/remove items, saves immediately ──
 	( function() {
-		var scanBtn    = document.getElementById( 'jst-menu-scan-btn' );
-		var statusEl   = document.getElementById( 'jst-menu-scan-status' );
-		var groupsEl   = document.getElementById( 'jst-menu-groups' );
-		var manualBody = document.getElementById( 'jst-menu-manual-body' );
-		var navArea    = document.getElementById( 'jst_navigation' );
+		var loadBtn        = document.getElementById( 'jst-menu-load-btn' );
+		var statusEl       = document.getElementById( 'jst-menu-load-status' );
+		var outlineEl      = document.getElementById( 'jst-menu-outline' );
+		var addTopLevelRow = document.getElementById( 'jst-menu-add-toplevel-row' );
+		var navArea        = document.getElementById( 'jst_navigation' );
 
-		var jstMenuState = { doc: null };
+		// doc: the live parsed nav fragment (single source of truth — every
+		// action mutates this, then re-derives the outline from it fresh,
+		// since cloneNode() doesn't carry over the _jstMatch tags below).
+		// manualDropdowns: top-level dropdowns created via "Add Top-Level
+		// Item" that don't have 2+ children yet, so normal detection
+		// (which requires a repeated pattern) can't find them on its own.
+		var jstMenuState = { doc: null, allItems: [], itemsById: {}, byPath: {}, manualDropdowns: [] };
 
 		function jstMenuFragmentToDoc( str ) {
 			return ( new DOMParser() ).parseFromString( '<!doctype html><body>' + str + '</body>', 'text/html' );
@@ -1436,6 +1437,7 @@ function jst_render_theme_options_page() {
 
 		// Tags each <a> in the nav doc whose href matches a real permalink
 		// (compared by pathname, so relative hrefs match absolute REST links).
+		// Re-run after every mutation — cloneNode() doesn't copy this tag.
 		function jstMenuMatchAnchors( doc, byPath ) {
 			return Array.from( doc.querySelectorAll( 'a[href]' ) ).filter( function( a ) {
 				var href = a.getAttribute( 'href' );
@@ -1446,27 +1448,26 @@ function jst_render_theme_options_page() {
 			} );
 		}
 
-		// Groups content-linked anchors that share the same class + matched
-		// post type — the repeated-sibling pattern that marks a real dropdown
-		// list rather than a one-off link (e.g. "All Services", a divider).
-		function jstMenuClusterGroups( matchedAnchors ) {
+		// Clusters content-linked anchors that share the same class + matched
+		// post type — the repeated-sibling pattern of a real dropdown list.
+		function jstMenuClusterChildLists( matchedAnchors ) {
 			var clusters = {};
 			matchedAnchors.forEach( function( a ) {
 				var key = ( a.getAttribute( 'class' ) || '' ) + '::' + a._jstMatch.postType;
 				( clusters[ key ] = clusters[ key ] || [] ).push( a );
 			} );
-			var groups = [];
+			var lists = [];
 			Object.keys( clusters ).forEach( function( key ) {
 				if ( clusters[ key ].length < 2 ) { return; } // require an actual repeated pattern
-				groups.push( jstMenuBuildGroup( clusters[ key ] ) );
+				lists.push( jstMenuBuildChildList( clusters[ key ] ) );
 			} );
-			return groups;
+			return lists;
 		}
 
 		// Decides the clone unit: the <a> itself when matched anchors are
 		// direct siblings (this theme's dropdowns), or a shared wrapper
 		// (e.g. <li>) when each anchor has its own repeated parent instead.
-		function jstMenuBuildGroup( anchors ) {
+		function jstMenuBuildChildList( anchors ) {
 			var firstParent    = anchors[ 0 ].parentElement;
 			var directSiblings = anchors.every( function( a ) { return a.parentElement === firstParent; } );
 
@@ -1514,39 +1515,133 @@ function jst_render_theme_options_page() {
 			return unionSize === 0 ? 0 : inter / unionSize;
 		}
 
-		// Pairs up groups that are likely the same dropdown rendered twice
-		// (desktop nav + mobile <details> mirror) so one checklist drives
-		// both — matched by linked-item overlap, not by markup similarity.
-		function jstMenuPairGroups( groups ) {
+		// Finds the nearest preceding <button>/<summary> above a child list's
+		// container — that's the dropdown's toggle, and its text is the
+		// top-level label. Widens the search scope up a few ancestor levels
+		// until one is found. No toggle found nearby ⇒ this isn't a real
+		// dropdown (e.g. two plain top-level links that happen to share a
+		// class) — caller falls back to treating each anchor standalone.
+		function jstMenuFindToggle( containerNode ) {
+			var node = containerNode;
+			for ( var depth = 0; depth < 5 && node && node.parentElement; depth++ ) {
+				var scope = node.parentElement;
+				var candidates = Array.from( scope.querySelectorAll( 'button, summary' ) );
+				var best = null;
+				candidates.forEach( function( c ) {
+					if ( node.contains( c ) || c === node ) { return; }
+					if ( c.compareDocumentPosition( node ) & Node.DOCUMENT_POSITION_FOLLOWING ) { best = c; }
+				} );
+				if ( best ) { return { toggle: best, wrapper: scope }; }
+				node = scope;
+			}
+			return null;
+		}
+
+		function jstMenuToggleLabel( toggle ) {
+			var t = ( toggle.textContent || '' ).replace( /\s+/g, ' ' ).trim();
+			return t || '(untitled)';
+		}
+
+		// Pairs up dropdown records that are likely the same list rendered
+		// twice (desktop nav + mobile <details> mirror) so one Add/Remove
+		// action drives both — matched by linked-item overlap, not markup.
+		function jstMenuPairDropdowns( records ) {
 			var used  = [];
 			var pairs = [];
-			groups.forEach( function( g, i ) {
-				if ( used.indexOf( i ) !== -1 ) { return; }
+			records.forEach( function( r, i ) {
+				if ( -1 !== used.indexOf( i ) ) { return; }
 				var bestJ = -1, bestScore = 0;
-				for ( var j = i + 1; j < groups.length; j++ ) {
-					if ( used.indexOf( j ) !== -1 || groups[ j ].postType !== g.postType ) { continue; }
-					var idsA = g.entries.map( function( e ) { return e.id; } );
-					var idsB = groups[ j ].entries.map( function( e ) { return e.id; } );
+				for ( var j = i + 1; j < records.length; j++ ) {
+					if ( -1 !== used.indexOf( j ) || records[ j ].childList.postType !== r.childList.postType ) { continue; }
+					var idsA = r.childList.entries.map( function( e ) { return e.id; } );
+					var idsB = records[ j ].childList.entries.map( function( e ) { return e.id; } );
 					var score = jstMenuOverlap( idsA, idsB );
 					if ( score > bestScore ) { bestScore = score; bestJ = j; }
 				}
-				if ( bestJ !== -1 && bestScore >= 0.8 ) {
+				var label = jstMenuToggleLabel( r.toggle );
+				if ( -1 !== bestJ && bestScore >= 0.8 ) {
 					used.push( i, bestJ );
-					pairs.push( { postType: g.postType, members: [ g, groups[ bestJ ] ] } );
+					pairs.push( { label: label, postType: r.childList.postType, members: [ r.childList, records[ bestJ ].childList ], wrapperNodes: [ r.wrapper, records[ bestJ ].wrapper ], toggleNodes: [ r.toggle, records[ bestJ ].toggle ] } );
 				} else {
 					used.push( i );
-					pairs.push( { postType: g.postType, members: [ g ] } );
+					pairs.push( { label: label, postType: r.childList.postType, members: [ r.childList ], wrapperNodes: [ r.wrapper ], toggleNodes: [ r.toggle ] } );
 				}
 			} );
 			return pairs;
 		}
 
-		// The last entry that will still be in the DOM after `toRemove` is
-		// applied — used both as the insertion point and the clone source.
-		function jstMenuSurvivorNode( member, toRemove ) {
-			var survivors = member.entries.filter( function( e ) { return toRemove.indexOf( e ) === -1; } );
-			if ( survivors.length ) { return survivors[ survivors.length - 1 ].node; }
-			return member.entries.length ? member.entries[ member.entries.length - 1 ].node : null;
+		// Builds the plain outline: top-level dropdowns (with their children)
+		// + standalone top-level links (anchors not absorbed into a dropdown).
+		function jstMenuDetectTopLevel( doc, matchedAnchors ) {
+			var childLists = jstMenuClusterChildLists( matchedAnchors );
+			var records = [];
+			var consumed = new Set();
+
+			childLists.forEach( function( cl ) {
+				var found = jstMenuFindToggle( cl.container );
+				if ( found ) {
+					records.push( { childList: cl, toggle: found.toggle, wrapper: found.wrapper } );
+					cl.entries.forEach( function( e ) { consumed.add( e.anchor ); } );
+				}
+			} );
+
+			var pairs = jstMenuPairDropdowns( records );
+
+			var standalone = matchedAnchors.filter( function( a ) { return ! consumed.has( a ); } );
+			var linkGroups = {};
+			standalone.forEach( function( a ) {
+				var id = a._jstMatch.id;
+				( linkGroups[ id ] = linkGroups[ id ] || [] ).push( a );
+			} );
+			var linkItems = Object.keys( linkGroups ).map( function( id ) {
+				var anchors = linkGroups[ id ];
+				var first = anchors[ 0 ];
+				return {
+					kind: 'link',
+					label: ( first.textContent || '' ).replace( /\s+/g, ' ' ).trim() || first._jstMatch.title,
+					postType: first._jstMatch.postType,
+					itemId: first._jstMatch.id,
+					anchors: anchors,
+				};
+			} );
+
+			var dropdownItems = pairs.map( function( p ) {
+				return {
+					kind: 'dropdown',
+					label: p.label,
+					postType: p.postType,
+					members: p.members,
+					wrapperNodes: p.wrapperNodes,
+					toggleNodes: p.toggleNodes,
+				};
+			} );
+
+			return dropdownItems.concat( linkItems );
+		}
+
+		// Merges freshly-detected top-level items with any manually-created
+		// empty dropdowns that can't be auto-detected yet (see jstMenuState
+		// comment above) — dropping a manual entry once it either graduates
+		// (auto-detection now finds it, having gained 2+ children) or was
+		// removed from the DOM entirely.
+		function jstMenuGetTopLevel() {
+			var matched = jstMenuMatchAnchors( jstMenuState.doc, jstMenuState.byPath );
+			var auto = jstMenuDetectTopLevel( jstMenuState.doc, matched );
+
+			var autoContainers = [];
+			auto.forEach( function( it ) {
+				if ( 'dropdown' === it.kind ) {
+					it.members.forEach( function( m ) { autoContainers.push( m.container ); } );
+				}
+			} );
+
+			jstMenuState.manualDropdowns = jstMenuState.manualDropdowns.filter( function( md ) {
+				var stillInDom = md.wrapperNodes.some( function( w ) { return w && w.parentNode; } );
+				if ( ! stillInDom ) { return false; }
+				return md.members.every( function( m ) { return -1 === autoContainers.indexOf( m.container ); } );
+			} );
+
+			return auto.concat( jstMenuState.manualDropdowns );
 		}
 
 		function jstMenuBuildCloneNode( member, templateNode, item ) {
@@ -1563,270 +1658,392 @@ function jst_render_theme_options_page() {
 			return clone;
 		}
 
-		// entries with id -1 are manual-template seeds (see jstMenuRenderManualPicker) —
-		// never counted as "linked" and never removed, only cloned from.
-		function jstMenuDiffMember( member, targetIds ) {
-			var manageable = member.entries.filter( function( e ) { return -1 !== e.id; } );
-			var toRemove   = manageable.filter( function( e ) { return -1 === targetIds.indexOf( e.id ); } );
-			var toAddIds   = targetIds.filter( function( id ) { return manageable.every( function( e ) { return e.id !== id; } ); } );
-			return { toRemove: toRemove, toAddIds: toAddIds };
+		// Maps a known descendant of `originalRoot` to the corresponding node
+		// inside `clonedRoot` (a deep clone of originalRoot) by child-index
+		// path — used after cloning a whole dropdown wrapper to find its
+		// toggle/child-container inside the copy.
+		function jstMenuFindClonedNode( originalRoot, clonedRoot, target ) {
+			var path = [];
+			var node = target;
+			while ( node && node !== originalRoot ) {
+				var parent = node.parentElement;
+				if ( ! parent ) { return null; }
+				path.unshift( Array.prototype.indexOf.call( parent.children, node ) );
+				node = parent;
+			}
+			if ( node !== originalRoot ) { return null; }
+			var result = clonedRoot;
+			for ( var i = 0; i < path.length; i++ ) {
+				result = result.children[ path[ i ] ];
+				if ( ! result ) { return null; }
+			}
+			return result;
 		}
 
-		function jstMenuApplyMemberDiff( member, targetIds, itemsById ) {
-			var diff = jstMenuDiffMember( member, targetIds );
-			var templateSrc = jstMenuSurvivorNode( member, diff.toRemove );
-			if ( ! templateSrc ) { return; }
-			var templateClone = templateSrc.cloneNode( true );
-
-			var insertAfter = templateSrc;
-			diff.toRemove.forEach( function( e ) {
-				if ( e.node.parentNode ) { e.node.parentNode.removeChild( e.node ); }
+		function jstMenuSave() {
+			var html = jstMenuState.doc.body.innerHTML.trim();
+			if ( navArea ) { navArea.value = html; }
+			return fetch( jstRestUrl + 'jst/v1/options', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': jstRestNonce },
+				body: JSON.stringify( { jst_navigation: html } ),
+			} ).then( function( res ) {
+				return res.json().then( function( d ) { return { ok: res.ok, data: d }; } );
 			} );
+		}
 
-			diff.toAddIds.forEach( function( id ) {
-				var item = itemsById[ id ];
-				if ( ! item ) { return; }
-				var clone = jstMenuBuildCloneNode( member, templateClone, item );
-				if ( insertAfter && insertAfter.parentNode ) {
+		function jstMenuRender() {
+			var topLevel = jstMenuGetTopLevel();
+			jstMenuRenderAddTopLevelControl( topLevel );
+			outlineEl.innerHTML = '';
+			if ( ! topLevel.length ) {
+				outlineEl.innerHTML = '<p style="color:#646970;font-size:12px;">No menu items linking to real pages were found.</p>';
+				return;
+			}
+			topLevel.forEach( function( item ) { outlineEl.appendChild( jstMenuBuildTopLevelRow( item ) ); } );
+		}
+
+		function jstMenuAddChildren( item, items, statusEl2 ) {
+			var anyApplied  = false;
+			var skippedEmpty = false;
+
+			item.members.forEach( function( member ) {
+				if ( ! member.entries.length ) { skippedEmpty = true; return; }
+				var lastNode = member.entries[ member.entries.length - 1 ].node;
+				var templateClone = lastNode.cloneNode( true );
+				var insertAfter = lastNode;
+				items.forEach( function( it ) {
+					var clone = jstMenuBuildCloneNode( member, templateClone, it );
 					if ( insertAfter.nextSibling ) { insertAfter.parentNode.insertBefore( clone, insertAfter.nextSibling ); }
 					else { insertAfter.parentNode.appendChild( clone ); }
-				} else {
-					member.container.appendChild( clone );
-				}
-				insertAfter = clone;
+					member.entries.push( { node: clone, id: it.id, anchor: 'anchor' === member.cloneUnit ? clone : clone.querySelector( 'a[href]' ) } );
+					insertAfter = clone;
+				} );
+				anyApplied = true;
 			} );
-		}
 
-		function jstMenuSerializeBack() {
-			if ( navArea && jstMenuState.doc ) {
-				navArea.value = jstMenuState.doc.body.innerHTML.trim();
+			if ( ! anyApplied ) {
+				statusEl2.textContent = 'Can’t add yet — this item has no existing entries to copy the style from.';
+				return;
 			}
-		}
 
-		function jstMenuRenderDiffPreview( pair, targetIds, itemsById, container ) {
-			container.style.display = 'block';
-			var html = '';
-			pair.members.forEach( function( member, mi ) {
-				var diff  = jstMenuDiffMember( member, targetIds );
-				var label = pair.members.length > 1 ? ( 0 === mi ? 'Desktop' : 'Mobile' ) : 'Menu';
-				html += '<div style="margin-bottom:8px;"><strong style="font-size:11px;">' + jstMenuEscapeHtml( label ) + '</strong>';
-				diff.toAddIds.forEach( function( id ) {
-					var item = itemsById[ id ];
-					html += '<div class="jst-out-row"><span class="jst-out-icon">+</span><span class="jst-out-title">' + jstMenuEscapeHtml( item ? item.title : String( id ) ) + '</span></div>';
-				} );
-				diff.toRemove.forEach( function( e ) {
-					var item = itemsById[ e.id ];
-					html += '<div class="jst-out-row"><span class="jst-out-icon">−</span><span class="jst-out-title">' + jstMenuEscapeHtml( item ? item.title : String( e.id ) ) + '</span></div>';
-				} );
-				if ( ! diff.toAddIds.length && ! diff.toRemove.length ) {
-					html += '<div style="font-size:11px;color:#646970;">No changes.</div>';
-				} else if ( diff.toAddIds.length ) {
-					var templateSrc = jstMenuSurvivorNode( member, diff.toRemove );
-					if ( templateSrc ) {
-						var previewClone = jstMenuBuildCloneNode( member, templateSrc.cloneNode( true ), itemsById[ diff.toAddIds[ 0 ] ] );
-						html += '<div class="jst-opts-ext-preview">' + jstMenuEscapeHtml( previewClone.outerHTML ) + '</div>';
-					}
-				}
-				html += '</div>';
+			statusEl2.textContent = 'Saving…';
+			jstMenuSave().then( function( r ) {
+				statusEl2.textContent = r.ok ? ( '✓ Added' + ( skippedEmpty ? ' (one location had nothing to copy from, so it was skipped there)' : '' ) ) : ( 'Save failed: ' + ( r.data && r.data.message ? r.data.message : 'unknown error' ) );
+				jstMenuRender();
+			} ).catch( function( err ) {
+				statusEl2.textContent = 'Save failed: ' + err.message;
 			} );
-			container.innerHTML = html;
 		}
 
-		function jstMenuBuildGroupCard( pair, allItems, itemsById ) {
-			var postType   = pair.postType;
-			var label      = jstPtMap[ postType ] ? jstPtMap[ postType ].label : postType;
-			var candidates = allItems.filter( function( it ) { return it.postType === postType; } );
-			var linkedIds  = pair.members[ 0 ].entries.filter( function( e ) { return -1 !== e.id; } ).map( function( e ) { return e.id; } );
+		function jstMenuRemoveChild( item, id ) {
+			item.members.forEach( function( member ) {
+				member.entries.forEach( function( e ) {
+					if ( e.id === id && e.node.parentNode ) { e.node.parentNode.removeChild( e.node ); }
+				} );
+			} );
+			jstMenuSave().then( function() { jstMenuRender(); } );
+		}
 
-			var card = document.createElement( 'div' );
-			card.className = 'jst-opts-extracted';
+		function jstMenuRemoveTopLevel( item ) {
+			if ( 'dropdown' === item.kind ) {
+				item.wrapperNodes.forEach( function( w ) { if ( w && w.parentNode ) { w.parentNode.removeChild( w ); } } );
+			} else {
+				item.anchors.forEach( function( a ) { if ( a.parentNode ) { a.parentNode.removeChild( a ); } } );
+			}
+			jstMenuSave().then( function() { jstMenuRender(); } );
+		}
 
-			var head = document.createElement( 'div' );
-			head.className = 'jst-opts-ext-header';
-			head.innerHTML = '<span>' + jstMenuEscapeHtml( label ) + ' dropdown</span>' +
-				'<span class="jst-opts-badge found">' + linkedIds.length + ' linked</span>' +
-				( pair.members.length > 1 ? '<span class="jst-opts-badge found" style="background:#d1e0ff;color:#1d3f8a;">paired: desktop + mobile</span>' : '' );
-			card.appendChild( head );
+		function jstMenuOpenAddPanel( item, container, statusEl2 ) {
+			var existing = container.querySelector( '.jst-menu-add-panel' );
+			if ( existing ) { existing.remove(); return; }
 
-			var body = document.createElement( 'div' );
-			body.style.cssText = 'padding:8px 10px;';
-			card.appendChild( body );
+			var primaryMember = item.members[ 0 ];
+			var presentIds = primaryMember.entries.map( function( e ) { return e.id; } );
+			var candidates = jstMenuState.allItems.filter( function( it ) { return it.postType === item.postType && -1 === presentIds.indexOf( it.id ); } );
 
-			var list = document.createElement( 'div' );
-			list.style.cssText = 'background:#fff;border:1px solid #dcdcde;border-radius:3px;padding:6px;margin-bottom:8px;max-height:220px;overflow-y:auto;';
-			body.appendChild( list );
+			var panel = document.createElement( 'div' );
+			panel.className = 'jst-menu-add-panel';
+			panel.style.cssText = 'background:#fff;border:1px solid #dcdcde;border-radius:3px;padding:6px;margin-top:6px;max-height:220px;overflow-y:auto;';
 
 			if ( ! candidates.length ) {
-				list.innerHTML = '<p style="font-size:11px;color:#646970;margin:2px 0;">No published items found for this post type.</p>';
+				panel.innerHTML = '<p style="font-size:11px;color:#646970;margin:2px 0;">Nothing left to add — every published item is already here.</p>';
+				container.appendChild( panel );
+				return;
 			}
 
-			candidates.forEach( function( item ) {
+			candidates.forEach( function( it ) {
 				var row = document.createElement( 'label' );
 				row.style.cssText = 'display:flex;gap:6px;align-items:center;padding:4px 0;font-size:12px;border-bottom:1px solid #f0f0f1;';
 				var cb = document.createElement( 'input' );
 				cb.type = 'checkbox';
-				var alreadyLinked = -1 !== linkedIds.indexOf( item.id );
-				cb.checked = alreadyLinked || ( 'page' !== postType );
-				cb.dataset.itemId = item.id;
+				cb.dataset.itemId = it.id;
 				row.appendChild( cb );
-				var txt = document.createElement( 'span' );
-				txt.textContent = item.title + ( alreadyLinked ? ' (currently linked)' : '' );
-				row.appendChild( txt );
-				list.appendChild( row );
+				row.appendChild( document.createTextNode( it.title ) );
+				panel.appendChild( row );
 			} );
 
-			var previewBox = document.createElement( 'div' );
-			previewBox.style.display = 'none';
-			body.appendChild( previewBox );
+			var confirmBtn = document.createElement( 'button' );
+			confirmBtn.type = 'button';
+			confirmBtn.className = 'button button-primary button-small';
+			confirmBtn.textContent = 'Add Checked';
+			confirmBtn.style.marginTop = '6px';
+			panel.appendChild( confirmBtn );
 
-			var btnRow = document.createElement( 'div' );
-			btnRow.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;';
-			body.appendChild( btnRow );
-
-			var previewBtn = document.createElement( 'button' );
-			previewBtn.type = 'button';
-			previewBtn.className = 'button button-secondary button-small';
-			previewBtn.textContent = 'Preview Changes';
-			btnRow.appendChild( previewBtn );
-
-			var applyBtn = document.createElement( 'button' );
-			applyBtn.type = 'button';
-			applyBtn.className = 'button button-primary button-small';
-			applyBtn.textContent = 'Reconstruct Menu';
-			applyBtn.disabled = true;
-			btnRow.appendChild( applyBtn );
-
-			var rowStatus = document.createElement( 'span' );
-			rowStatus.style.cssText = 'font-size:11px;color:#646970;';
-			btnRow.appendChild( rowStatus );
-
-			function getTargetIds() {
-				return Array.from( list.querySelectorAll( 'input:checked' ) ).map( function( cb ) { return parseInt( cb.dataset.itemId, 10 ); } );
-			}
-
-			previewBtn.addEventListener( 'click', function() {
-				var targetIds = getTargetIds();
-				jstMenuRenderDiffPreview( pair, targetIds, itemsById, previewBox );
-				var anyChange = pair.members.some( function( member ) {
-					var d = jstMenuDiffMember( member, targetIds );
-					return d.toAddIds.length || d.toRemove.length;
-				} );
-				applyBtn.disabled = ! anyChange;
+			confirmBtn.addEventListener( 'click', function() {
+				var checked = Array.from( panel.querySelectorAll( 'input:checked' ) )
+					.map( function( cb ) { return jstMenuState.itemsById[ parseInt( cb.dataset.itemId, 10 ) ]; } )
+					.filter( Boolean );
+				if ( ! checked.length ) { return; }
+				jstMenuAddChildren( item, checked, statusEl2 );
 			} );
 
-			applyBtn.addEventListener( 'click', function() {
-				var targetIds = getTargetIds();
-				pair.members.forEach( function( member ) { jstMenuApplyMemberDiff( member, targetIds, itemsById ); } );
-				jstMenuSerializeBack();
-				rowStatus.textContent = '✓ Applied — switch to Theme Options tab and Save.';
-				applyBtn.disabled = true;
-				previewBox.style.display = 'none';
-			} );
-
-			return card;
+			container.appendChild( panel );
 		}
 
-		// Fallback for markup that doesn't cluster cleanly: pick any existing
-		// link by hand to use as the clone template, choose which post type
-		// to sync against, and it produces a card identical to an auto-detected
-		// one (id: -1 marks the seed anchor as "template only, not a linked item").
-		function jstMenuRenderManualPicker( doc, allItems, itemsById ) {
-			manualBody.innerHTML = '';
-			var allAnchors = Array.from( doc.querySelectorAll( 'a[href]' ) );
-			if ( ! allAnchors.length ) {
-				manualBody.innerHTML = '<p style="font-size:11px;color:#646970;">No links found in the saved nav HTML.</p>';
-				return;
+		function jstMenuBuildTopLevelRow( item ) {
+			var row = document.createElement( 'div' );
+			row.className = 'jst-opts-extracted';
+
+			var head = document.createElement( 'div' );
+			head.className = 'jst-opts-ext-header';
+			var titleSpan = document.createElement( 'span' );
+			titleSpan.textContent = item.label;
+			head.appendChild( titleSpan );
+
+			var removeBtn = document.createElement( 'button' );
+			removeBtn.type = 'button';
+			removeBtn.className = 'button button-small';
+			removeBtn.style.marginLeft = 'auto';
+			removeBtn.textContent = '✕ Remove';
+			removeBtn.addEventListener( 'click', function() {
+				if ( ! window.confirm( 'Remove "' + item.label + '" from the menu?' ) ) { return; }
+				jstMenuRemoveTopLevel( item );
+			} );
+			head.appendChild( removeBtn );
+			row.appendChild( head );
+
+			var body = document.createElement( 'div' );
+			body.style.cssText = 'padding:8px 10px;';
+			row.appendChild( body );
+
+			if ( 'link' === item.kind ) {
+				var p = document.createElement( 'p' );
+				p.style.cssText = 'font-size:12px;color:#646970;margin:0;';
+				var target = jstMenuState.itemsById[ item.itemId ];
+				p.textContent = 'Links to: ' + ( target ? target.title : item.itemId );
+				body.appendChild( p );
+				return row;
 			}
 
-			var wrap = document.createElement( 'div' );
-			wrap.style.cssText = 'display:flex;flex-direction:column;gap:8px;max-width:640px;';
-
-			var pickLabel = document.createElement( 'label' );
-			pickLabel.style.cssText = 'font-size:12px;display:flex;flex-direction:column;gap:4px;';
-			pickLabel.appendChild( document.createTextNode( 'Use this link as the clone template:' ) );
-			var select = document.createElement( 'select' );
-			allAnchors.forEach( function( a, i ) {
-				var opt = document.createElement( 'option' );
-				var cls = ( a.getAttribute( 'class' ) || '' ).slice( 0, 40 );
-				opt.value = String( i );
-				opt.textContent = ( a.textContent.trim() || '(no text)' ) + ' — ' + a.getAttribute( 'href' ) + ( cls ? ' — .' + cls.replace( /\s+/g, '.' ) : '' );
-				select.appendChild( opt );
+			var list = document.createElement( 'div' );
+			list.style.cssText = 'margin-bottom:8px;';
+			var primaryMember = item.members[ 0 ];
+			primaryMember.entries.forEach( function( entry ) {
+				var childRow = document.createElement( 'div' );
+				childRow.className = 'jst-out-row';
+				var name = document.createElement( 'span' );
+				name.className = 'jst-out-title';
+				var known = jstMenuState.itemsById[ entry.id ];
+				name.textContent = known ? known.title : '(unknown)';
+				childRow.appendChild( name );
+				var xBtn = document.createElement( 'button' );
+				xBtn.type = 'button';
+				xBtn.className = 'button button-small';
+				xBtn.textContent = '✕';
+				xBtn.addEventListener( 'click', function() {
+					if ( ! window.confirm( 'Remove "' + name.textContent + '" from ' + item.label + '?' ) ) { return; }
+					jstMenuRemoveChild( item, entry.id );
+				} );
+				childRow.appendChild( xBtn );
+				list.appendChild( childRow );
 			} );
-			pickLabel.appendChild( select );
-			wrap.appendChild( pickLabel );
+			if ( ! primaryMember.entries.length ) {
+				list.innerHTML = '<p style="font-size:11px;color:#646970;margin:2px 0;">No items yet.</p>';
+			}
+			body.appendChild( list );
 
-			var ptLabel = document.createElement( 'label' );
-			ptLabel.style.cssText = 'font-size:12px;display:flex;flex-direction:column;gap:4px;';
-			ptLabel.appendChild( document.createTextNode( 'Sync this dropdown against:' ) );
-			var ptSelect = document.createElement( 'select' );
-			Object.keys( jstPtMap ).forEach( function( pt ) {
-				var opt = document.createElement( 'option' );
-				opt.value = pt;
-				opt.textContent = jstPtMap[ pt ].label;
-				ptSelect.appendChild( opt );
-			} );
-			ptLabel.appendChild( ptSelect );
-			wrap.appendChild( ptLabel );
-
+			var addWrap = document.createElement( 'div' );
+			body.appendChild( addWrap );
 			var addBtn = document.createElement( 'button' );
 			addBtn.type = 'button';
 			addBtn.className = 'button button-secondary button-small';
-			addBtn.textContent = 'Add Group';
-			wrap.appendChild( addBtn );
+			addBtn.textContent = '+ Add';
+			addWrap.appendChild( addBtn );
+			var addStatus = document.createElement( 'span' );
+			addStatus.style.cssText = 'font-size:11px;color:#646970;margin-left:8px;';
+			addWrap.appendChild( addStatus );
 
-			manualBody.appendChild( wrap );
+			addBtn.addEventListener( 'click', function() { jstMenuOpenAddPanel( item, addWrap, addStatus ); } );
 
-			addBtn.addEventListener( 'click', function() {
-				var anchor = allAnchors[ parseInt( select.value, 10 ) ];
-				var pt     = ptSelect.value;
-				var group  = {
-					postType:  pt,
-					cloneUnit: 'anchor',
-					container: anchor.parentElement,
-					entries:   [ { node: anchor, id: -1, anchor: anchor } ],
-				};
-				var pair = { postType: pt, members: [ group ] };
-				groupsEl.appendChild( jstMenuBuildGroupCard( pair, allItems, itemsById ) );
-			} );
+			return row;
 		}
 
-		scanBtn.addEventListener( 'click', function() {
-			var raw = navArea ? navArea.value.trim() : '';
-			if ( ! raw ) { statusEl.textContent = 'Header Nav / Menu is empty — nothing to scan.'; return; }
+		function jstMenuRenderAddTopLevelControl( topLevel ) {
+			addTopLevelRow.innerHTML = '';
+			addTopLevelRow.style.display = topLevel.length ? 'block' : 'none';
+			if ( ! topLevel.length ) { return; }
 
-			statusEl.textContent = 'Scanning…';
-			groupsEl.innerHTML   = '';
-			scanBtn.disabled     = true;
+			var toggleBtn = document.createElement( 'button' );
+			toggleBtn.type = 'button';
+			toggleBtn.className = 'button button-secondary';
+			toggleBtn.textContent = '+ Add Top-Level Item';
+			addTopLevelRow.appendChild( toggleBtn );
+
+			var panel = document.createElement( 'div' );
+			panel.style.cssText = 'display:none;margin-top:8px;padding:10px;background:#f6f7f7;border:1px solid #dcdcde;border-radius:4px;';
+			addTopLevelRow.appendChild( panel );
+
+			toggleBtn.addEventListener( 'click', function() {
+				var show = 'none' === panel.style.display;
+				panel.style.display = show ? 'block' : 'none';
+				if ( show ) { buildPanel(); }
+			} );
+
+			function buildPanel() {
+				panel.innerHTML = '';
+
+				var pickLabel = document.createElement( 'label' );
+				pickLabel.style.cssText = 'font-size:12px;display:flex;flex-direction:column;gap:4px;margin-bottom:8px;';
+				pickLabel.appendChild( document.createTextNode( 'Copy the style of:' ) );
+				var select = document.createElement( 'select' );
+				topLevel.forEach( function( it, i ) {
+					var opt = document.createElement( 'option' );
+					opt.value = String( i );
+					opt.textContent = it.label + ( 'dropdown' === it.kind ? ' (dropdown)' : ' (link)' );
+					select.appendChild( opt );
+				} );
+				pickLabel.appendChild( select );
+				panel.appendChild( pickLabel );
+
+				var labelInput = document.createElement( 'input' );
+				labelInput.type = 'text';
+				labelInput.placeholder = 'New item label, e.g. Financing';
+				labelInput.style.cssText = 'width:100%;margin-bottom:8px;box-sizing:border-box;';
+				panel.appendChild( labelInput );
+
+				var targetWrap = document.createElement( 'div' );
+				panel.appendChild( targetWrap );
+
+				function refreshTargetField() {
+					targetWrap.innerHTML = '';
+					var chosen = topLevel[ parseInt( select.value, 10 ) ];
+					if ( 'link' !== chosen.kind ) { return; }
+					var targetLabel = document.createElement( 'label' );
+					targetLabel.style.cssText = 'font-size:12px;display:flex;flex-direction:column;gap:4px;margin-bottom:8px;';
+					targetLabel.appendChild( document.createTextNode( 'Links to:' ) );
+					var targetSelect = document.createElement( 'select' );
+					targetSelect.className = 'jst-menu-toplevel-target';
+					jstMenuState.allItems.forEach( function( it ) {
+						var opt = document.createElement( 'option' );
+						opt.value = String( it.id );
+						opt.textContent = it.title + ' (' + ( jstPtMap[ it.postType ] ? jstPtMap[ it.postType ].label : it.postType ) + ')';
+						targetSelect.appendChild( opt );
+					} );
+					targetLabel.appendChild( targetSelect );
+					targetWrap.appendChild( targetLabel );
+				}
+				refreshTargetField();
+				select.addEventListener( 'change', refreshTargetField );
+
+				var addBtn = document.createElement( 'button' );
+				addBtn.type = 'button';
+				addBtn.className = 'button button-primary button-small';
+				addBtn.textContent = 'Add';
+				panel.appendChild( addBtn );
+
+				var status = document.createElement( 'span' );
+				status.style.cssText = 'font-size:11px;color:#646970;margin-left:8px;';
+				panel.appendChild( status );
+
+				addBtn.addEventListener( 'click', function() {
+					var chosen = topLevel[ parseInt( select.value, 10 ) ];
+					var label  = labelInput.value.trim();
+					if ( ! label ) { status.textContent = 'Enter a label first.'; return; }
+
+					if ( 'link' === chosen.kind ) {
+						var targetSelect = targetWrap.querySelector( 'select' );
+						var targetItem = targetSelect ? jstMenuState.itemsById[ parseInt( targetSelect.value, 10 ) ] : null;
+						if ( ! targetItem ) { status.textContent = 'Pick a page first.'; return; }
+						chosen.anchors.forEach( function( a ) {
+							var clone = a.cloneNode( true );
+							var currentHref = a.getAttribute( 'href' ) || '';
+							var relative = '/' === currentHref.charAt( 0 );
+							var href = targetItem.link;
+							try { if ( relative ) { href = new URL( targetItem.link ).pathname; } } catch ( e ) {}
+							clone.setAttribute( 'href', href );
+							clone.textContent = label;
+							a.parentNode.insertBefore( clone, a.nextSibling );
+						} );
+						status.textContent = 'Saving…';
+						jstMenuSave().then( function( r ) {
+							status.textContent = r.ok ? '✓ Added' : 'Save failed';
+							jstMenuRender();
+						} ).catch( function( err ) { status.textContent = 'Save failed: ' + err.message; } );
+						return;
+					}
+
+					// Dropdown: clone the wrapper, relabel its toggle, empty its
+					// child container so the new one starts with zero items —
+					// tracked in jstMenuState.manualDropdowns until it has
+					// enough children for normal detection to find it on its own.
+					var newMembers = [];
+					var newWrapperNodes = [];
+					chosen.wrapperNodes.forEach( function( w, wi ) {
+						var clone = w.cloneNode( true );
+						var origToggle = chosen.toggleNodes[ wi ];
+						var clonedToggle = jstMenuFindClonedNode( w, clone, origToggle );
+						if ( clonedToggle ) { clonedToggle.textContent = label; }
+						var member = chosen.members[ wi ];
+						var clonedContainer = jstMenuFindClonedNode( w, clone, member.container );
+						if ( clonedContainer ) { clonedContainer.innerHTML = ''; }
+						w.parentNode.insertBefore( clone, w.nextSibling );
+						newWrapperNodes.push( clone );
+						newMembers.push( { postType: member.postType, cloneUnit: member.cloneUnit, container: clonedContainer || clone, entries: [] } );
+					} );
+
+					jstMenuState.manualDropdowns.push( {
+						kind: 'dropdown',
+						label: label,
+						postType: chosen.postType,
+						members: newMembers,
+						wrapperNodes: newWrapperNodes,
+						toggleNodes: newWrapperNodes.map( function( w ) { return w.querySelector( 'button, summary' ); } ),
+					} );
+
+					status.textContent = 'Saving…';
+					jstMenuSave().then( function( r ) {
+						status.textContent = r.ok ? '✓ Added' : 'Save failed';
+						jstMenuRender();
+					} ).catch( function( err ) { status.textContent = 'Save failed: ' + err.message; } );
+				} );
+			}
+		}
+
+		loadBtn.addEventListener( 'click', function() {
+			var raw = navArea ? navArea.value.trim() : '';
+			if ( ! raw ) { statusEl.textContent = 'Header Nav / Menu is empty — nothing to load.'; return; }
+
+			statusEl.textContent = 'Loading…';
+			loadBtn.disabled = true;
 
 			var doc = jstMenuFragmentToDoc( raw );
 
 			jstMenuFetchAllItems().then( function( allItems ) {
 				jstMenuState.doc = doc;
+				jstMenuState.allItems = allItems;
+				jstMenuState.itemsById = {};
+				allItems.forEach( function( it ) { jstMenuState.itemsById[ it.id ] = it; } );
+				jstMenuState.byPath = {};
+				allItems.forEach( function( it ) { jstMenuState.byPath[ it.pathname ] = it; } );
+				jstMenuState.manualDropdowns = [];
 
-				var byPath = {};
-				allItems.forEach( function( it ) { byPath[ it.pathname ] = it; } );
-				var itemsById = {};
-				allItems.forEach( function( it ) { itemsById[ it.id ] = it; } );
-
-				var matched = jstMenuMatchAnchors( doc, byPath );
-				var groups  = jstMenuClusterGroups( matched );
-				var pairs   = jstMenuPairGroups( groups );
-
-				if ( ! pairs.length ) {
-					groupsEl.innerHTML = '<p style="color:#646970;font-size:12px;">No content-linked dropdown groups detected — try the manual option below.</p>';
-				} else {
-					pairs.forEach( function( pair ) {
-						groupsEl.appendChild( jstMenuBuildGroupCard( pair, allItems, itemsById ) );
-					} );
-				}
-
-				jstMenuRenderManualPicker( doc, allItems, itemsById );
-
-				statusEl.textContent = matched.length + ' linked item' + ( 1 !== matched.length ? 's' : '' ) + ' found across ' + pairs.length + ' group' + ( 1 !== pairs.length ? 's' : '' ) + '.';
-				scanBtn.disabled = false;
+				jstMenuRender();
+				statusEl.textContent = '';
+				loadBtn.disabled = false;
 			} ).catch( function( err ) {
-				statusEl.textContent = 'Scan failed: ' + err.message;
-				scanBtn.disabled = false;
+				statusEl.textContent = 'Load failed: ' + err.message;
+				loadBtn.disabled = false;
 			} );
 		} );
 	} )();
