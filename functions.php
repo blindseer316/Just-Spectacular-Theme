@@ -1448,12 +1448,32 @@ function jst_render_theme_options_page() {
 			} );
 		}
 
-		// Clusters content-linked anchors that share the same class + matched
-		// post type — the repeated-sibling pattern of a real dropdown list.
+		// True when `a` sits next to a sibling that itself holds multiple
+		// links — the signature of a dropdown *toggle* (its sibling is the
+		// dropdown panel), not a plain content item. Used to keep toggle
+		// anchors (which may themselves be real, matchable links, e.g.
+		// <a href="/services/">Services</a>) out of being clustered as if
+		// they were list items — including when two different dropdowns'
+		// toggles happen to share an identical class.
+		function jstMenuLooksLikeToggle( a ) {
+			var parent = a.parentElement;
+			if ( ! parent ) { return false; }
+			return Array.from( parent.children ).some( function( sib ) {
+				return sib !== a && sib.querySelectorAll( 'a' ).length >= 2;
+			} );
+		}
+
+		// Clusters content-linked anchors that share the same class — the
+		// repeated-sibling pattern of a real dropdown list. Post type is
+		// deliberately not part of the grouping key: an item added via
+		// "+Add → All types" gets cloned with the exact same class as its
+		// siblings, and needs to still cluster with them even though its
+		// post type differs.
 		function jstMenuClusterChildLists( matchedAnchors ) {
 			var clusters = {};
 			matchedAnchors.forEach( function( a ) {
-				var key = ( a.getAttribute( 'class' ) || '' ) + '::' + a._jstMatch.postType;
+				if ( jstMenuLooksLikeToggle( a ) ) { return; }
+				var key = a.getAttribute( 'class' ) || '';
 				( clusters[ key ] = clusters[ key ] || [] ).push( a );
 			} );
 			var lists = [];
@@ -1463,6 +1483,17 @@ function jst_render_theme_options_page() {
 				if ( list ) { lists.push( list ); }
 			} );
 			return lists;
+		}
+
+		// Post type shown for the group defaults to whichever type is most
+		// common among its members — used only to pre-select the "+Add"
+		// filter, not to constrain what can be added.
+		function jstMenuMajorityPostType( anchors ) {
+			var counts = {};
+			anchors.forEach( function( a ) { var pt = a._jstMatch.postType; counts[ pt ] = ( counts[ pt ] || 0 ) + 1; } );
+			var best = null, bestCount = 0;
+			Object.keys( counts ).forEach( function( pt ) { if ( counts[ pt ] > bestCount ) { bestCount = counts[ pt ]; best = pt; } } );
+			return best;
 		}
 
 		// Decides the clone unit: the <a> itself when matched anchors are
@@ -1480,16 +1511,6 @@ function jst_render_theme_options_page() {
 
 			var cloneUnit, container, itemNodes;
 			if ( directSiblings ) {
-				// A real link list's container holds only the repeated anchors
-				// (plus maybe a plain divider). If it also holds an element
-				// that itself contains a nested link — e.g. a dropdown-group
-				// wrapper sitting next to two plain top-level links — this
-				// isn't a real list, it's a mixed top-level row; reject it so
-				// those anchors fall through as standalone links instead.
-				var hasNestedLinkSibling = Array.from( firstParent.children ).some( function( child ) {
-					return 'A' !== child.tagName && child.querySelector( 'a' );
-				} );
-				if ( hasNestedLinkSibling ) { return null; }
 				cloneUnit = 'anchor';
 				container = firstParent;
 				itemNodes = anchors.slice();
@@ -1512,7 +1533,7 @@ function jst_render_theme_options_page() {
 			} );
 
 			return {
-				postType:  anchors[ 0 ]._jstMatch.postType,
+				postType:  jstMenuMajorityPostType( anchors ),
 				cloneUnit: cloneUnit,
 				container: container,
 				entries:   entries,
