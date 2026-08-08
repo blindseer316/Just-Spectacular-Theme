@@ -1459,7 +1459,8 @@ function jst_render_theme_options_page() {
 			var lists = [];
 			Object.keys( clusters ).forEach( function( key ) {
 				if ( clusters[ key ].length < 2 ) { return; } // require an actual repeated pattern
-				lists.push( jstMenuBuildChildList( clusters[ key ] ) );
+				var list = jstMenuBuildChildList( clusters[ key ] );
+				if ( list ) { lists.push( list ); }
 			} );
 			return lists;
 		}
@@ -1467,6 +1468,12 @@ function jst_render_theme_options_page() {
 		// Decides the clone unit: the <a> itself when matched anchors are
 		// direct siblings (this theme's dropdowns), or a shared wrapper
 		// (e.g. <li>) when each anchor has its own repeated parent instead.
+		// Returns null when anchors sharing a class don't actually share a
+		// real container (e.g. two unrelated links in different dropdowns
+		// that happen to use the same classes, like "All Services" and
+		// "All Service Areas") — that's not a real list, so the caller
+		// drops it and its anchors fall through as standalone links instead
+		// of being stitched into a bogus group.
 		function jstMenuBuildChildList( anchors ) {
 			var firstParent    = anchors[ 0 ].parentElement;
 			var directSiblings = anchors.every( function( a ) { return a.parentElement === firstParent; } );
@@ -1484,15 +1491,10 @@ function jst_render_theme_options_page() {
 				var consistent = wrappers.every( function( w ) {
 					return w && w.tagName === wTag && ( w.getAttribute( 'class' ) || '' ) === wClass && w.parentElement === wParent;
 				} );
-				if ( consistent ) {
-					cloneUnit = 'wrapper';
-					container = wParent;
-					itemNodes = wrappers;
-				} else {
-					cloneUnit = 'anchor';
-					container = firstParent;
-					itemNodes = anchors;
-				}
+				if ( ! consistent ) { return null; }
+				cloneUnit = 'wrapper';
+				container = wParent;
+				itemNodes = wrappers;
 			}
 
 			var entries = anchors.map( function( a, i ) {
@@ -1546,24 +1548,43 @@ function jst_render_theme_options_page() {
 		// twice (desktop nav + mobile <details> mirror) so one Add/Remove
 		// action drives both — matched by linked-item overlap, not markup.
 		function jstMenuPairDropdowns( records ) {
-			var used  = [];
-			var pairs = [];
-			records.forEach( function( r, i ) {
-				if ( -1 !== used.indexOf( i ) ) { return; }
-				var bestJ = -1, bestScore = 0;
+			// Score every same-postType pair up front, then assign highest-
+			// confidence matches first — a "first reasonable match wins" pass
+			// (processing records in order, each grabbing its own best partner)
+			// can leave a clean 100%-overlap pair unmerged if an earlier record
+			// happens to claim one of them first. Scoring globally avoids that.
+			var candidates = [];
+			for ( var i = 0; i < records.length; i++ ) {
 				for ( var j = i + 1; j < records.length; j++ ) {
-					if ( -1 !== used.indexOf( j ) || records[ j ].childList.postType !== r.childList.postType ) { continue; }
-					var idsA = r.childList.entries.map( function( e ) { return e.id; } );
+					if ( records[ i ].childList.postType !== records[ j ].childList.postType ) { continue; }
+					var idsA = records[ i ].childList.entries.map( function( e ) { return e.id; } );
 					var idsB = records[ j ].childList.entries.map( function( e ) { return e.id; } );
 					var score = jstMenuOverlap( idsA, idsB );
-					if ( score > bestScore ) { bestScore = score; bestJ = j; }
+					if ( score >= 0.8 ) { candidates.push( { i: i, j: j, score: score } ); }
 				}
+			}
+			candidates.sort( function( a, b ) { return b.score - a.score; } );
+
+			var partnerOf = {};
+			var claimed   = {};
+			candidates.forEach( function( c ) {
+				if ( claimed[ c.i ] || claimed[ c.j ] ) { return; }
+				claimed[ c.i ] = true;
+				claimed[ c.j ] = true;
+				partnerOf[ c.i ] = c.j;
+			} );
+
+			var used  = {};
+			var pairs = [];
+			records.forEach( function( r, i ) {
+				if ( used[ i ] ) { return; }
+				used[ i ] = true;
 				var label = jstMenuToggleLabel( r.toggle );
-				if ( -1 !== bestJ && bestScore >= 0.8 ) {
-					used.push( i, bestJ );
-					pairs.push( { label: label, postType: r.childList.postType, members: [ r.childList, records[ bestJ ].childList ], wrapperNodes: [ r.wrapper, records[ bestJ ].wrapper ], toggleNodes: [ r.toggle, records[ bestJ ].toggle ] } );
+				if ( partnerOf.hasOwnProperty( i ) ) {
+					var j = partnerOf[ i ];
+					used[ j ] = true;
+					pairs.push( { label: label, postType: r.childList.postType, members: [ r.childList, records[ j ].childList ], wrapperNodes: [ r.wrapper, records[ j ].wrapper ], toggleNodes: [ r.toggle, records[ j ].toggle ] } );
 				} else {
-					used.push( i );
 					pairs.push( { label: label, postType: r.childList.postType, members: [ r.childList ], wrapperNodes: [ r.wrapper ], toggleNodes: [ r.toggle ] } );
 				}
 			} );
