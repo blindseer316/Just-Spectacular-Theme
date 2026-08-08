@@ -1463,24 +1463,52 @@ function jst_render_theme_options_page() {
 			} );
 		}
 
-		// Clusters content-linked anchors that share the same class — the
-		// repeated-sibling pattern of a real dropdown list. Post type is
-		// deliberately not part of the grouping key: an item added via
-		// "+Add → All types" gets cloned with the exact same class as its
-		// siblings, and needs to still cluster with them even though its
-		// post type differs.
+		// Clusters content-linked anchors that share the same class AND the
+		// same real parent element — class alone isn't enough, since two
+		// unrelated dropdowns can easily reuse the same utility classes
+		// (e.g. a generic "block px-3 py-2 rounded-lg ..." item style used
+		// by both a Services list and a Service Areas list); grouping by
+		// class only would merge them into one cross-dropdown mess. Post
+		// type is deliberately not part of the key at all: an item added
+		// via "+Add → All types" is cloned into the exact same parent as
+		// its new siblings, so it still clusters correctly even though its
+		// post type differs from theirs.
 		function jstMenuClusterChildLists( matchedAnchors ) {
-			var clusters = {};
+			var byClass = {};
 			matchedAnchors.forEach( function( a ) {
 				if ( jstMenuLooksLikeToggle( a ) ) { return; }
 				var key = a.getAttribute( 'class' ) || '';
-				( clusters[ key ] = clusters[ key ] || [] ).push( a );
+				( byClass[ key ] = byClass[ key ] || [] ).push( a );
 			} );
+
 			var lists = [];
-			Object.keys( clusters ).forEach( function( key ) {
-				if ( clusters[ key ].length < 2 ) { return; } // require an actual repeated pattern
-				var list = jstMenuBuildChildList( clusters[ key ] );
-				if ( list ) { lists.push( list ); }
+			Object.keys( byClass ).forEach( function( key ) {
+				var byParent = new Map();
+				byClass[ key ].forEach( function( a ) {
+					var p = a.parentElement;
+					if ( ! byParent.has( p ) ) { byParent.set( p, [] ); }
+					byParent.get( p ).push( a );
+				} );
+
+				// Anchors that turned out to be the only one of their class
+				// in their own parent — the repeated-wrapper pattern (e.g.
+				// <li><a>) instead of direct siblings. Collected separately
+				// and handed to jstMenuBuildChildList together, which does
+				// its own wrapper-consistency check to decide if they're
+				// really one list spread across matching wrappers.
+				var soloAnchors = [];
+				byParent.forEach( function( anchorsInParent ) {
+					if ( anchorsInParent.length >= 2 ) {
+						var list = jstMenuBuildChildList( anchorsInParent );
+						if ( list ) { lists.push( list ); }
+					} else {
+						soloAnchors.push( anchorsInParent[ 0 ] );
+					}
+				} );
+				if ( soloAnchors.length >= 2 ) {
+					var wrapList = jstMenuBuildChildList( soloAnchors );
+					if ( wrapList ) { lists.push( wrapList ); }
+				}
 			} );
 			return lists;
 		}
