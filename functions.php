@@ -670,7 +670,7 @@ function jst_render_theme_options_page() {
 
 		var addition = '';
 		if ( styleRules.length ) { addition += '<style>\n' + styleRules.join( '\n' ) + '\n</style>\n'; }
-		if ( scriptStmts.length ) { addition += '<script>\n' + scriptStmts.join( '\n\n' ) + '\n</script>\n'; }
+		if ( scriptStmts.length ) { addition += '<script>\n' + scriptStmts.join( '\n\n' ) + '\n<\/script>\n'; }
 		if ( tags.length ) { addition += tags.join( '\n' ) + '\n'; }
 		return addition.trim();
 	}
