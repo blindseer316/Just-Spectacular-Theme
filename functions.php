@@ -1480,6 +1480,16 @@ function jst_render_theme_options_page() {
 
 			var cloneUnit, container, itemNodes;
 			if ( directSiblings ) {
+				// A real link list's container holds only the repeated anchors
+				// (plus maybe a plain divider). If it also holds an element
+				// that itself contains a nested link — e.g. a dropdown-group
+				// wrapper sitting next to two plain top-level links — this
+				// isn't a real list, it's a mixed top-level row; reject it so
+				// those anchors fall through as standalone links instead.
+				var hasNestedLinkSibling = Array.from( firstParent.children ).some( function( child ) {
+					return 'A' !== child.tagName && child.querySelector( 'a' );
+				} );
+				if ( hasNestedLinkSibling ) { return null; }
 				cloneUnit = 'anchor';
 				container = firstParent;
 				itemNodes = anchors.slice();
@@ -1517,24 +1527,31 @@ function jst_render_theme_options_page() {
 			return unionSize === 0 ? 0 : inter / unionSize;
 		}
 
-		// Finds the nearest preceding <button>/<summary> above a child list's
-		// container — that's the dropdown's toggle, and its text is the
-		// top-level label. Widens the search scope up a few ancestor levels
-		// until one is found. No toggle found nearby ⇒ this isn't a real
-		// dropdown (e.g. two plain top-level links that happen to share a
-		// class) — caller falls back to treating each anchor standalone.
+		// Finds a child list's toggle by walking up its ancestors and, at each
+		// level, checking that level's own preceding siblings for a
+		// button/summary/link (either the sibling itself, e.g. a toggle <a>
+		// right before the dropdown panel, or nested inside it, e.g. a <summary>
+		// wrapping its own <a>). Deliberately a *tight* sibling-only search —
+		// not a wide scan of everything before it in the document — so it
+		// can't wander off and grab an unrelated, distant link (e.g. a utility
+		// bar item) just because it happens to precede the container somewhere
+		// far up the tree. No toggle found nearby ⇒ this isn't a real
+		// dropdown — caller falls back to treating each anchor standalone.
 		function jstMenuFindToggle( containerNode ) {
 			var node = containerNode;
-			for ( var depth = 0; depth < 5 && node && node.parentElement; depth++ ) {
-				var scope = node.parentElement;
-				var candidates = Array.from( scope.querySelectorAll( 'button, summary' ) );
-				var best = null;
-				candidates.forEach( function( c ) {
-					if ( node.contains( c ) || c === node ) { return; }
-					if ( c.compareDocumentPosition( node ) & Node.DOCUMENT_POSITION_FOLLOWING ) { best = c; }
-				} );
-				if ( best ) { return { toggle: best, wrapper: scope }; }
-				node = scope;
+			for ( var depth = 0; depth < 6 && node; depth++ ) {
+				var sib = node.previousElementSibling;
+				while ( sib ) {
+					if ( /^(BUTTON|SUMMARY|A)$/.test( sib.tagName ) ) {
+						return { toggle: sib, wrapper: node.parentElement };
+					}
+					var nested = sib.querySelector( 'button, summary, a' );
+					if ( nested ) {
+						return { toggle: nested, wrapper: node.parentElement };
+					}
+					sib = sib.previousElementSibling;
+				}
+				node = node.parentElement;
 			}
 			return null;
 		}
@@ -1603,6 +1620,11 @@ function jst_render_theme_options_page() {
 				if ( found ) {
 					records.push( { childList: cl, toggle: found.toggle, wrapper: found.wrapper } );
 					cl.entries.forEach( function( e ) { consumed.add( e.anchor ); } );
+					// The toggle itself may also be a real link (e.g. "Services"
+					// pointing at /services/) — don't let it double up as its
+					// own standalone item alongside the dropdown it belongs to.
+					if ( 'A' === found.toggle.tagName ) { consumed.add( found.toggle ); }
+					else { var innerA = found.toggle.querySelector( 'a' ); if ( innerA ) { consumed.add( innerA ); } }
 				}
 			} );
 
@@ -1781,28 +1803,56 @@ function jst_render_theme_options_page() {
 
 			var primaryMember = item.members[ 0 ];
 			var presentIds = primaryMember.entries.map( function( e ) { return e.id; } );
-			var candidates = jstMenuState.allItems.filter( function( it ) { return it.postType === item.postType && -1 === presentIds.indexOf( it.id ); } );
 
 			var panel = document.createElement( 'div' );
 			panel.className = 'jst-menu-add-panel';
-			panel.style.cssText = 'background:#fff;border:1px solid #dcdcde;border-radius:3px;padding:6px;margin-top:6px;max-height:220px;overflow-y:auto;';
+			panel.style.cssText = 'background:#fff;border:1px solid #dcdcde;border-radius:3px;padding:6px;margin-top:6px;';
 
-			if ( ! candidates.length ) {
-				panel.innerHTML = '<p style="font-size:11px;color:#646970;margin:2px 0;">Nothing left to add — every published item is already here.</p>';
-				container.appendChild( panel );
-				return;
+			var typeLabel = document.createElement( 'label' );
+			typeLabel.style.cssText = 'display:flex;gap:6px;align-items:center;font-size:11px;color:#646970;margin-bottom:6px;';
+			typeLabel.appendChild( document.createTextNode( 'Show:' ) );
+			var typeSelect = document.createElement( 'select' );
+			var sameTypeOpt = document.createElement( 'option' );
+			sameTypeOpt.value = item.postType;
+			sameTypeOpt.textContent = ( jstPtMap[ item.postType ] ? jstPtMap[ item.postType ].label : item.postType ) + ' (same as this list)';
+			typeSelect.appendChild( sameTypeOpt );
+			var allOpt = document.createElement( 'option' );
+			allOpt.value = '';
+			allOpt.textContent = 'All types';
+			typeSelect.appendChild( allOpt );
+			typeLabel.appendChild( typeSelect );
+			panel.appendChild( typeLabel );
+
+			var listEl = document.createElement( 'div' );
+			listEl.style.cssText = 'max-height:200px;overflow-y:auto;';
+			panel.appendChild( listEl );
+
+			function renderList() {
+				listEl.innerHTML = '';
+				var wantType = typeSelect.value;
+				var candidates = jstMenuState.allItems.filter( function( it ) {
+					return ( ! wantType || it.postType === wantType ) && -1 === presentIds.indexOf( it.id );
+				} );
+
+				if ( ! candidates.length ) {
+					listEl.innerHTML = '<p style="font-size:11px;color:#646970;margin:2px 0;">Nothing left to add here.</p>';
+					return;
+				}
+
+				candidates.forEach( function( it ) {
+					var row = document.createElement( 'label' );
+					row.style.cssText = 'display:flex;gap:6px;align-items:center;padding:4px 0;font-size:12px;border-bottom:1px solid #f0f0f1;';
+					var cb = document.createElement( 'input' );
+					cb.type = 'checkbox';
+					cb.dataset.itemId = it.id;
+					row.appendChild( cb );
+					var label = it.title + ( ! wantType && it.postType !== item.postType ? ' (' + ( jstPtMap[ it.postType ] ? jstPtMap[ it.postType ].label : it.postType ) + ')' : '' );
+					row.appendChild( document.createTextNode( label ) );
+					listEl.appendChild( row );
+				} );
 			}
-
-			candidates.forEach( function( it ) {
-				var row = document.createElement( 'label' );
-				row.style.cssText = 'display:flex;gap:6px;align-items:center;padding:4px 0;font-size:12px;border-bottom:1px solid #f0f0f1;';
-				var cb = document.createElement( 'input' );
-				cb.type = 'checkbox';
-				cb.dataset.itemId = it.id;
-				row.appendChild( cb );
-				row.appendChild( document.createTextNode( it.title ) );
-				panel.appendChild( row );
-			} );
+			typeSelect.addEventListener( 'change', renderList );
+			renderList();
 
 			var confirmBtn = document.createElement( 'button' );
 			confirmBtn.type = 'button';
@@ -1812,7 +1862,7 @@ function jst_render_theme_options_page() {
 			panel.appendChild( confirmBtn );
 
 			confirmBtn.addEventListener( 'click', function() {
-				var checked = Array.from( panel.querySelectorAll( 'input:checked' ) )
+				var checked = Array.from( listEl.querySelectorAll( 'input:checked' ) )
 					.map( function( cb ) { return jstMenuState.itemsById[ parseInt( cb.dataset.itemId, 10 ) ]; } )
 					.filter( Boolean );
 				if ( ! checked.length ) { return; }
@@ -1865,8 +1915,12 @@ function jst_render_theme_options_page() {
 				childRow.className = 'jst-out-row';
 				var name = document.createElement( 'span' );
 				name.className = 'jst-out-title';
+				// Show what's actually on the site (the link's own text) —
+				// falls back to the page title only if the link is somehow
+				// empty (e.g. icon-only), so it never shows a mismatched label.
+				var ownText = entry.anchor ? ( entry.anchor.textContent || '' ).replace( /\s+/g, ' ' ).trim() : '';
 				var known = jstMenuState.itemsById[ entry.id ];
-				name.textContent = known ? known.title : '(unknown)';
+				name.textContent = ownText || ( known ? known.title : '(unknown)' );
 				childRow.appendChild( name );
 				var xBtn = document.createElement( 'button' );
 				xBtn.type = 'button';
