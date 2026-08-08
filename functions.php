@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JST_VERSION', '2.8.0' );
+define( 'JST_VERSION', '2.9.0' );
 
 
 /**
@@ -353,6 +353,7 @@ function jst_render_theme_options_page() {
 		<div id="jst-tab-nav">
 			<button type="button" class="jst-tab-btn jst-tab-active" data-tab="jst-tab-options"><?php esc_html_e( 'Theme Options', 'just-spectacular-theme' ); ?></button>
 			<button type="button" class="jst-tab-btn" data-tab="jst-tab-import"><?php esc_html_e( 'Import Templates', 'just-spectacular-theme' ); ?></button>
+			<button type="button" class="jst-tab-btn" data-tab="jst-tab-menu"><?php esc_html_e( 'Menu', 'just-spectacular-theme' ); ?></button>
 		</div>
 
 		<div id="jst-tab-options" class="jst-tab-panel jst-tab-visible">
@@ -503,6 +504,27 @@ function jst_render_theme_options_page() {
 
 			</div>
 		</div><!-- #jst-tab-import -->
+
+		<div id="jst-tab-menu" class="jst-tab-panel" style="padding-top:16px;">
+			<div id="jst-menu-columns">
+
+				<div id="jst-menu-left">
+					<p style="color:#646970;font-size:12px;max-width:640px;"><?php esc_html_e( 'Scans the Header Nav / Menu HTML currently saved in Theme Options, matches its links against real published pages/CPT items, and lets you sync each dropdown against a checklist — new items are cloned from an existing linked item so they keep its exact styling.', 'just-spectacular-theme' ); ?></p>
+					<p>
+						<button type="button" id="jst-menu-scan-btn" class="button button-primary"><?php esc_html_e( 'Scan Current Menu', 'just-spectacular-theme' ); ?></button>
+						<span id="jst-menu-scan-status" style="font-size:12px;color:#646970;margin-left:8px;"></span>
+					</p>
+				</div>
+
+				<div id="jst-menu-groups"></div>
+
+				<details id="jst-menu-manual-box" style="margin-top:12px;">
+					<summary style="cursor:pointer;font-weight:600;font-size:13px;color:#1d2327;padding:4px 0;"><?php esc_html_e( "Can't auto-detect a group? Add one manually", 'just-spectacular-theme' ); ?></summary>
+					<div id="jst-menu-manual-body" style="padding:10px 0 0;"></div>
+				</details>
+
+			</div>
+		</div><!-- #jst-tab-menu -->
 
 	</div><!-- .wrap -->
 
@@ -1349,6 +1371,463 @@ function jst_render_theme_options_page() {
 			bulkDone  = 0;
 			bulkStatus.textContent = '0 / ' + bulkTotal + ' done';
 			pending.forEach( function( card ) { createPage( card, true ); } );
+		} );
+	} )();
+
+	// ── Menu tab: detect CPT/page-backed nav dropdowns, sync via checklist ──
+	( function() {
+		var scanBtn    = document.getElementById( 'jst-menu-scan-btn' );
+		var statusEl   = document.getElementById( 'jst-menu-scan-status' );
+		var groupsEl   = document.getElementById( 'jst-menu-groups' );
+		var manualBody = document.getElementById( 'jst-menu-manual-body' );
+		var navArea    = document.getElementById( 'jst_navigation' );
+
+		var jstMenuState = { doc: null };
+
+		function jstMenuFragmentToDoc( str ) {
+			return ( new DOMParser() ).parseFromString( '<!doctype html><body>' + str + '</body>', 'text/html' );
+		}
+
+		function jstMenuPathname( url ) {
+			try {
+				var u = new URL( url, window.location.href );
+				return u.pathname.replace( /\/+$/, '' ) || '/';
+			} catch ( e ) { return url; }
+		}
+
+		function jstMenuDecodeEntities( str ) {
+			var ta = document.createElement( 'textarea' );
+			ta.innerHTML = str;
+			return ta.value;
+		}
+
+		function jstMenuEscapeHtml( str ) {
+			var div = document.createElement( 'div' );
+			div.textContent = str;
+			return div.innerHTML;
+		}
+
+		// Fetches published items for every post type in jstPtMap (already
+		// public + REST-enabled, computed server-side — same map the Import
+		// Templates tab uses for its post-type dropdown).
+		function jstMenuFetchAllItems() {
+			var types = Object.keys( jstPtMap );
+			return Promise.all( types.map( function( pt ) {
+				var restBase = jstPtMap[ pt ].rest_base;
+				var url = jstRestUrl + 'wp/v2/' + restBase + '?per_page=100&status=publish&orderby=title&order=asc&_fields=id,link,title';
+				return fetch( url, { headers: { 'X-WP-Nonce': jstRestNonce } } )
+					.then( function( res ) { return res.ok ? res.json() : []; } )
+					.then( function( list ) {
+						return ( list || [] ).map( function( item ) {
+							return {
+								id: item.id,
+								postType: pt,
+								title: jstMenuDecodeEntities( item.title && item.title.rendered ? item.title.rendered : '(untitled)' ),
+								link: item.link,
+								pathname: jstMenuPathname( item.link ),
+							};
+						} );
+					} )
+					.catch( function() { return []; } );
+			} ) ).then( function( results ) {
+				return results.reduce( function( acc, list ) { return acc.concat( list ); }, [] );
+			} );
+		}
+
+		// Tags each <a> in the nav doc whose href matches a real permalink
+		// (compared by pathname, so relative hrefs match absolute REST links).
+		function jstMenuMatchAnchors( doc, byPath ) {
+			return Array.from( doc.querySelectorAll( 'a[href]' ) ).filter( function( a ) {
+				var href = a.getAttribute( 'href' );
+				if ( ! href || href.charAt( 0 ) === '#' ) { return false; }
+				var match = byPath[ jstMenuPathname( href ) ];
+				if ( match ) { a._jstMatch = match; return true; }
+				return false;
+			} );
+		}
+
+		// Groups content-linked anchors that share the same class + matched
+		// post type — the repeated-sibling pattern that marks a real dropdown
+		// list rather than a one-off link (e.g. "All Services", a divider).
+		function jstMenuClusterGroups( matchedAnchors ) {
+			var clusters = {};
+			matchedAnchors.forEach( function( a ) {
+				var key = ( a.getAttribute( 'class' ) || '' ) + '::' + a._jstMatch.postType;
+				( clusters[ key ] = clusters[ key ] || [] ).push( a );
+			} );
+			var groups = [];
+			Object.keys( clusters ).forEach( function( key ) {
+				if ( clusters[ key ].length < 2 ) { return; } // require an actual repeated pattern
+				groups.push( jstMenuBuildGroup( clusters[ key ] ) );
+			} );
+			return groups;
+		}
+
+		// Decides the clone unit: the <a> itself when matched anchors are
+		// direct siblings (this theme's dropdowns), or a shared wrapper
+		// (e.g. <li>) when each anchor has its own repeated parent instead.
+		function jstMenuBuildGroup( anchors ) {
+			var firstParent    = anchors[ 0 ].parentElement;
+			var directSiblings = anchors.every( function( a ) { return a.parentElement === firstParent; } );
+
+			var cloneUnit, container, itemNodes;
+			if ( directSiblings ) {
+				cloneUnit = 'anchor';
+				container = firstParent;
+				itemNodes = anchors.slice();
+			} else {
+				var wrappers = anchors.map( function( a ) { return a.parentElement; } );
+				var wTag    = wrappers[ 0 ] ? wrappers[ 0 ].tagName : null;
+				var wClass  = wrappers[ 0 ] ? ( wrappers[ 0 ].getAttribute( 'class' ) || '' ) : '';
+				var wParent = wrappers[ 0 ] ? wrappers[ 0 ].parentElement : null;
+				var consistent = wrappers.every( function( w ) {
+					return w && w.tagName === wTag && ( w.getAttribute( 'class' ) || '' ) === wClass && w.parentElement === wParent;
+				} );
+				if ( consistent ) {
+					cloneUnit = 'wrapper';
+					container = wParent;
+					itemNodes = wrappers;
+				} else {
+					cloneUnit = 'anchor';
+					container = firstParent;
+					itemNodes = anchors;
+				}
+			}
+
+			var entries = anchors.map( function( a, i ) {
+				return { node: itemNodes[ i ], id: a._jstMatch.id, anchor: a };
+			} );
+
+			return {
+				postType:  anchors[ 0 ]._jstMatch.postType,
+				cloneUnit: cloneUnit,
+				container: container,
+				entries:   entries,
+			};
+		}
+
+		function jstMenuOverlap( idsA, idsB ) {
+			var setA = {};
+			idsA.forEach( function( id ) { setA[ id ] = true; } );
+			var inter = idsB.filter( function( id ) { return setA[ id ]; } ).length;
+			var unionSize = ( new Set( idsA.concat( idsB ) ) ).size;
+			return unionSize === 0 ? 0 : inter / unionSize;
+		}
+
+		// Pairs up groups that are likely the same dropdown rendered twice
+		// (desktop nav + mobile <details> mirror) so one checklist drives
+		// both — matched by linked-item overlap, not by markup similarity.
+		function jstMenuPairGroups( groups ) {
+			var used  = [];
+			var pairs = [];
+			groups.forEach( function( g, i ) {
+				if ( used.indexOf( i ) !== -1 ) { return; }
+				var bestJ = -1, bestScore = 0;
+				for ( var j = i + 1; j < groups.length; j++ ) {
+					if ( used.indexOf( j ) !== -1 || groups[ j ].postType !== g.postType ) { continue; }
+					var idsA = g.entries.map( function( e ) { return e.id; } );
+					var idsB = groups[ j ].entries.map( function( e ) { return e.id; } );
+					var score = jstMenuOverlap( idsA, idsB );
+					if ( score > bestScore ) { bestScore = score; bestJ = j; }
+				}
+				if ( bestJ !== -1 && bestScore >= 0.8 ) {
+					used.push( i, bestJ );
+					pairs.push( { postType: g.postType, members: [ g, groups[ bestJ ] ] } );
+				} else {
+					used.push( i );
+					pairs.push( { postType: g.postType, members: [ g ] } );
+				}
+			} );
+			return pairs;
+		}
+
+		// The last entry that will still be in the DOM after `toRemove` is
+		// applied — used both as the insertion point and the clone source.
+		function jstMenuSurvivorNode( member, toRemove ) {
+			var survivors = member.entries.filter( function( e ) { return toRemove.indexOf( e ) === -1; } );
+			if ( survivors.length ) { return survivors[ survivors.length - 1 ].node; }
+			return member.entries.length ? member.entries[ member.entries.length - 1 ].node : null;
+		}
+
+		function jstMenuBuildCloneNode( member, templateNode, item ) {
+			var clone = templateNode.cloneNode( true );
+			var a = 'anchor' === member.cloneUnit ? clone : clone.querySelector( 'a[href]' );
+			if ( a ) {
+				var currentHref = a.getAttribute( 'href' ) || '';
+				var relative    = '/' === currentHref.charAt( 0 );
+				var href        = item.link;
+				try { if ( relative ) { href = new URL( item.link ).pathname; } } catch ( e ) {}
+				a.setAttribute( 'href', href );
+				a.textContent = item.title;
+			}
+			return clone;
+		}
+
+		// entries with id -1 are manual-template seeds (see jstMenuRenderManualPicker) —
+		// never counted as "linked" and never removed, only cloned from.
+		function jstMenuDiffMember( member, targetIds ) {
+			var manageable = member.entries.filter( function( e ) { return -1 !== e.id; } );
+			var toRemove   = manageable.filter( function( e ) { return -1 === targetIds.indexOf( e.id ); } );
+			var toAddIds   = targetIds.filter( function( id ) { return manageable.every( function( e ) { return e.id !== id; } ); } );
+			return { toRemove: toRemove, toAddIds: toAddIds };
+		}
+
+		function jstMenuApplyMemberDiff( member, targetIds, itemsById ) {
+			var diff = jstMenuDiffMember( member, targetIds );
+			var templateSrc = jstMenuSurvivorNode( member, diff.toRemove );
+			if ( ! templateSrc ) { return; }
+			var templateClone = templateSrc.cloneNode( true );
+
+			var insertAfter = templateSrc;
+			diff.toRemove.forEach( function( e ) {
+				if ( e.node.parentNode ) { e.node.parentNode.removeChild( e.node ); }
+			} );
+
+			diff.toAddIds.forEach( function( id ) {
+				var item = itemsById[ id ];
+				if ( ! item ) { return; }
+				var clone = jstMenuBuildCloneNode( member, templateClone, item );
+				if ( insertAfter && insertAfter.parentNode ) {
+					if ( insertAfter.nextSibling ) { insertAfter.parentNode.insertBefore( clone, insertAfter.nextSibling ); }
+					else { insertAfter.parentNode.appendChild( clone ); }
+				} else {
+					member.container.appendChild( clone );
+				}
+				insertAfter = clone;
+			} );
+		}
+
+		function jstMenuSerializeBack() {
+			if ( navArea && jstMenuState.doc ) {
+				navArea.value = jstMenuState.doc.body.innerHTML.trim();
+			}
+		}
+
+		function jstMenuRenderDiffPreview( pair, targetIds, itemsById, container ) {
+			container.style.display = 'block';
+			var html = '';
+			pair.members.forEach( function( member, mi ) {
+				var diff  = jstMenuDiffMember( member, targetIds );
+				var label = pair.members.length > 1 ? ( 0 === mi ? 'Desktop' : 'Mobile' ) : 'Menu';
+				html += '<div style="margin-bottom:8px;"><strong style="font-size:11px;">' + jstMenuEscapeHtml( label ) + '</strong>';
+				diff.toAddIds.forEach( function( id ) {
+					var item = itemsById[ id ];
+					html += '<div class="jst-out-row"><span class="jst-out-icon">+</span><span class="jst-out-title">' + jstMenuEscapeHtml( item ? item.title : String( id ) ) + '</span></div>';
+				} );
+				diff.toRemove.forEach( function( e ) {
+					var item = itemsById[ e.id ];
+					html += '<div class="jst-out-row"><span class="jst-out-icon">−</span><span class="jst-out-title">' + jstMenuEscapeHtml( item ? item.title : String( e.id ) ) + '</span></div>';
+				} );
+				if ( ! diff.toAddIds.length && ! diff.toRemove.length ) {
+					html += '<div style="font-size:11px;color:#646970;">No changes.</div>';
+				} else if ( diff.toAddIds.length ) {
+					var templateSrc = jstMenuSurvivorNode( member, diff.toRemove );
+					if ( templateSrc ) {
+						var previewClone = jstMenuBuildCloneNode( member, templateSrc.cloneNode( true ), itemsById[ diff.toAddIds[ 0 ] ] );
+						html += '<div class="jst-opts-ext-preview">' + jstMenuEscapeHtml( previewClone.outerHTML ) + '</div>';
+					}
+				}
+				html += '</div>';
+			} );
+			container.innerHTML = html;
+		}
+
+		function jstMenuBuildGroupCard( pair, allItems, itemsById ) {
+			var postType   = pair.postType;
+			var label      = jstPtMap[ postType ] ? jstPtMap[ postType ].label : postType;
+			var candidates = allItems.filter( function( it ) { return it.postType === postType; } );
+			var linkedIds  = pair.members[ 0 ].entries.filter( function( e ) { return -1 !== e.id; } ).map( function( e ) { return e.id; } );
+
+			var card = document.createElement( 'div' );
+			card.className = 'jst-opts-extracted';
+
+			var head = document.createElement( 'div' );
+			head.className = 'jst-opts-ext-header';
+			head.innerHTML = '<span>' + jstMenuEscapeHtml( label ) + ' dropdown</span>' +
+				'<span class="jst-opts-badge found">' + linkedIds.length + ' linked</span>' +
+				( pair.members.length > 1 ? '<span class="jst-opts-badge found" style="background:#d1e0ff;color:#1d3f8a;">paired: desktop + mobile</span>' : '' );
+			card.appendChild( head );
+
+			var body = document.createElement( 'div' );
+			body.style.cssText = 'padding:8px 10px;';
+			card.appendChild( body );
+
+			var list = document.createElement( 'div' );
+			list.style.cssText = 'background:#fff;border:1px solid #dcdcde;border-radius:3px;padding:6px;margin-bottom:8px;max-height:220px;overflow-y:auto;';
+			body.appendChild( list );
+
+			if ( ! candidates.length ) {
+				list.innerHTML = '<p style="font-size:11px;color:#646970;margin:2px 0;">No published items found for this post type.</p>';
+			}
+
+			candidates.forEach( function( item ) {
+				var row = document.createElement( 'label' );
+				row.style.cssText = 'display:flex;gap:6px;align-items:center;padding:4px 0;font-size:12px;border-bottom:1px solid #f0f0f1;';
+				var cb = document.createElement( 'input' );
+				cb.type = 'checkbox';
+				var alreadyLinked = -1 !== linkedIds.indexOf( item.id );
+				cb.checked = alreadyLinked || ( 'page' !== postType );
+				cb.dataset.itemId = item.id;
+				row.appendChild( cb );
+				var txt = document.createElement( 'span' );
+				txt.textContent = item.title + ( alreadyLinked ? ' (currently linked)' : '' );
+				row.appendChild( txt );
+				list.appendChild( row );
+			} );
+
+			var previewBox = document.createElement( 'div' );
+			previewBox.style.display = 'none';
+			body.appendChild( previewBox );
+
+			var btnRow = document.createElement( 'div' );
+			btnRow.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;';
+			body.appendChild( btnRow );
+
+			var previewBtn = document.createElement( 'button' );
+			previewBtn.type = 'button';
+			previewBtn.className = 'button button-secondary button-small';
+			previewBtn.textContent = 'Preview Changes';
+			btnRow.appendChild( previewBtn );
+
+			var applyBtn = document.createElement( 'button' );
+			applyBtn.type = 'button';
+			applyBtn.className = 'button button-primary button-small';
+			applyBtn.textContent = 'Reconstruct Menu';
+			applyBtn.disabled = true;
+			btnRow.appendChild( applyBtn );
+
+			var rowStatus = document.createElement( 'span' );
+			rowStatus.style.cssText = 'font-size:11px;color:#646970;';
+			btnRow.appendChild( rowStatus );
+
+			function getTargetIds() {
+				return Array.from( list.querySelectorAll( 'input:checked' ) ).map( function( cb ) { return parseInt( cb.dataset.itemId, 10 ); } );
+			}
+
+			previewBtn.addEventListener( 'click', function() {
+				var targetIds = getTargetIds();
+				jstMenuRenderDiffPreview( pair, targetIds, itemsById, previewBox );
+				var anyChange = pair.members.some( function( member ) {
+					var d = jstMenuDiffMember( member, targetIds );
+					return d.toAddIds.length || d.toRemove.length;
+				} );
+				applyBtn.disabled = ! anyChange;
+			} );
+
+			applyBtn.addEventListener( 'click', function() {
+				var targetIds = getTargetIds();
+				pair.members.forEach( function( member ) { jstMenuApplyMemberDiff( member, targetIds, itemsById ); } );
+				jstMenuSerializeBack();
+				rowStatus.textContent = '✓ Applied — switch to Theme Options tab and Save.';
+				applyBtn.disabled = true;
+				previewBox.style.display = 'none';
+			} );
+
+			return card;
+		}
+
+		// Fallback for markup that doesn't cluster cleanly: pick any existing
+		// link by hand to use as the clone template, choose which post type
+		// to sync against, and it produces a card identical to an auto-detected
+		// one (id: -1 marks the seed anchor as "template only, not a linked item").
+		function jstMenuRenderManualPicker( doc, allItems, itemsById ) {
+			manualBody.innerHTML = '';
+			var allAnchors = Array.from( doc.querySelectorAll( 'a[href]' ) );
+			if ( ! allAnchors.length ) {
+				manualBody.innerHTML = '<p style="font-size:11px;color:#646970;">No links found in the saved nav HTML.</p>';
+				return;
+			}
+
+			var wrap = document.createElement( 'div' );
+			wrap.style.cssText = 'display:flex;flex-direction:column;gap:8px;max-width:640px;';
+
+			var pickLabel = document.createElement( 'label' );
+			pickLabel.style.cssText = 'font-size:12px;display:flex;flex-direction:column;gap:4px;';
+			pickLabel.appendChild( document.createTextNode( 'Use this link as the clone template:' ) );
+			var select = document.createElement( 'select' );
+			allAnchors.forEach( function( a, i ) {
+				var opt = document.createElement( 'option' );
+				var cls = ( a.getAttribute( 'class' ) || '' ).slice( 0, 40 );
+				opt.value = String( i );
+				opt.textContent = ( a.textContent.trim() || '(no text)' ) + ' — ' + a.getAttribute( 'href' ) + ( cls ? ' — .' + cls.replace( /\s+/g, '.' ) : '' );
+				select.appendChild( opt );
+			} );
+			pickLabel.appendChild( select );
+			wrap.appendChild( pickLabel );
+
+			var ptLabel = document.createElement( 'label' );
+			ptLabel.style.cssText = 'font-size:12px;display:flex;flex-direction:column;gap:4px;';
+			ptLabel.appendChild( document.createTextNode( 'Sync this dropdown against:' ) );
+			var ptSelect = document.createElement( 'select' );
+			Object.keys( jstPtMap ).forEach( function( pt ) {
+				var opt = document.createElement( 'option' );
+				opt.value = pt;
+				opt.textContent = jstPtMap[ pt ].label;
+				ptSelect.appendChild( opt );
+			} );
+			ptLabel.appendChild( ptSelect );
+			wrap.appendChild( ptLabel );
+
+			var addBtn = document.createElement( 'button' );
+			addBtn.type = 'button';
+			addBtn.className = 'button button-secondary button-small';
+			addBtn.textContent = 'Add Group';
+			wrap.appendChild( addBtn );
+
+			manualBody.appendChild( wrap );
+
+			addBtn.addEventListener( 'click', function() {
+				var anchor = allAnchors[ parseInt( select.value, 10 ) ];
+				var pt     = ptSelect.value;
+				var group  = {
+					postType:  pt,
+					cloneUnit: 'anchor',
+					container: anchor.parentElement,
+					entries:   [ { node: anchor, id: -1, anchor: anchor } ],
+				};
+				var pair = { postType: pt, members: [ group ] };
+				groupsEl.appendChild( jstMenuBuildGroupCard( pair, allItems, itemsById ) );
+			} );
+		}
+
+		scanBtn.addEventListener( 'click', function() {
+			var raw = navArea ? navArea.value.trim() : '';
+			if ( ! raw ) { statusEl.textContent = 'Header Nav / Menu is empty — nothing to scan.'; return; }
+
+			statusEl.textContent = 'Scanning…';
+			groupsEl.innerHTML   = '';
+			scanBtn.disabled     = true;
+
+			var doc = jstMenuFragmentToDoc( raw );
+
+			jstMenuFetchAllItems().then( function( allItems ) {
+				jstMenuState.doc = doc;
+
+				var byPath = {};
+				allItems.forEach( function( it ) { byPath[ it.pathname ] = it; } );
+				var itemsById = {};
+				allItems.forEach( function( it ) { itemsById[ it.id ] = it; } );
+
+				var matched = jstMenuMatchAnchors( doc, byPath );
+				var groups  = jstMenuClusterGroups( matched );
+				var pairs   = jstMenuPairGroups( groups );
+
+				if ( ! pairs.length ) {
+					groupsEl.innerHTML = '<p style="color:#646970;font-size:12px;">No content-linked dropdown groups detected — try the manual option below.</p>';
+				} else {
+					pairs.forEach( function( pair ) {
+						groupsEl.appendChild( jstMenuBuildGroupCard( pair, allItems, itemsById ) );
+					} );
+				}
+
+				jstMenuRenderManualPicker( doc, allItems, itemsById );
+
+				statusEl.textContent = matched.length + ' linked item' + ( 1 !== matched.length ? 's' : '' ) + ' found across ' + pairs.length + ' group' + ( 1 !== pairs.length ? 's' : '' ) + '.';
+				scanBtn.disabled = false;
+			} ).catch( function( err ) {
+				statusEl.textContent = 'Scan failed: ' + err.message;
+				scanBtn.disabled = false;
+			} );
 		} );
 	} )();
 	</script>
